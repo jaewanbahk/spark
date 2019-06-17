@@ -699,6 +699,34 @@ case class Range(
   }
 }
 
+object Repeat {
+  def apply(value: Long, count: Long, numSlices: Option[Int]): Repeat = {
+    val output = StructType(StructField("id", LongType, nullable = false) :: Nil).toAttributes
+    new Repeat(value, count, numSlices, output)
+  }
+  def apply(value: Long, count: Long, numSlices: Int): Repeat = {
+    Repeat(value, count, Some(numSlices))
+  }
+}
+
+
+case class Repeat(
+                   value: Long,
+                   count: Long,
+                   numSlices: Option[Int],
+                   output: Seq[Attribute]
+                 )
+  extends LeafNode with MultiInstanceRelation {
+
+  override def newInstance(): Repeat = copy(output = output.map(_.newInstance()))
+
+  override def simpleString(maxFields: Int): String = {
+    s"Repeat ($value, $count)"
+  }
+
+}
+
+
 /**
  * This is a Group by operator with the aggregate functions and projections.
  *

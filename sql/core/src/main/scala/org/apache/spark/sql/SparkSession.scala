@@ -38,7 +38,7 @@ import org.apache.spark.sql.catalyst._
 import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
 import org.apache.spark.sql.catalyst.encoders._
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
-import org.apache.spark.sql.catalyst.plans.logical.{LocalRelation, Range}
+import org.apache.spark.sql.catalyst.plans.logical.{LocalRelation, Range, Repeat}
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.apache.spark.sql.internal._
@@ -551,6 +551,10 @@ class SparkSession private(
     range(start, end, step = 1, numPartitions = sparkContext.defaultParallelism)
   }
 
+  def repeat(value: Long, count: Long): Dataset[java.lang.Long] = {
+    repeat(value, count, numPartitions = sparkContext.defaultParallelism)
+  }
+
   /**
    * :: Experimental ::
    * Creates a [[Dataset]] with a single `LongType` column named `id`, containing elements
@@ -564,6 +568,9 @@ class SparkSession private(
     range(start, end, step, numPartitions = sparkContext.defaultParallelism)
   }
 
+  def repeat(value: Long, count: Long, numPartitions: Int): Dataset[java.lang.Long] = {
+    new Dataset(self, Repeat(value, count, numPartitions), Encoders.LONG)
+  }
   /**
    * :: Experimental ::
    * Creates a [[Dataset]] with a single `LongType` column named `id`, containing elements

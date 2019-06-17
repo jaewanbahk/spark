@@ -594,6 +594,77 @@ case class RangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range)
   }
 }
 
+
+case class RepeatExec(repeat: org.apache.spark.sql.catalyst.plans.logical.Repeat)
+  extends LeafExecNode {
+
+  val value: Long = repeat.value
+  val countval: Long = repeat.count
+  val numSlices: Int = repeat.numSlices.getOrElse(sparkContext.defaultParallelism)
+
+  override val output: Seq[Attribute] = repeat.output
+
+  override lazy val metrics = Map(
+    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
+
+  override def outputPartitioning: Partitioning = {
+    if (countval > 0) {
+      if (numSlices == 1) {
+        SinglePartition
+      } else {
+        RangePartitioning(outputOrdering, numSlices)
+      }
+    } else {
+      UnknownPartitioning(0)
+    }
+  }
+
+  protected override def doExecute(): RDD[InternalRow] = {
+    val numOutputRows = longMetric("numOutputRows")
+    sqlContext
+      .sparkContext
+      .parallelize(0 until numSlices, numSlices)
+      .mapPartitionsWithIndex { (i, _) =>
+        val partitionStart = (i * countval) / numSlices
+        val partitionEnd = ((i + 1) * countval / numSlices)
+
+        def getSafeMargin(bi: BigInt): Long =
+          if (bi.isValidLong) {
+            bi.toLong
+          } else if (bi > 0) {
+            Long.MaxValue
+          } else {
+            Long.MinValue
+          }
+
+        val safePartitionStart = getSafeMargin(partitionStart)
+        val safePartitionEnd = getSafeMargin(partitionEnd)
+        val rowSize = UnsafeRow.calculateBitSetWidthInBytes(1) + LongType.defaultSize
+        val unsafeRow = UnsafeRow.createFromByteArray(rowSize, 1)
+        val taskContext = TaskContext.get()
+
+        val iter = new Iterator[InternalRow] {
+          private[this] var step: Long = safePartitionStart
+          private[this] val inputMetrics = taskContext.taskMetrics().inputMetrics
+
+          override def hasNext = step < safePartitionEnd
+
+          override def next() = {
+            step += 1
+            numOutputRows += 1
+            inputMetrics.incRecordsRead(1)
+            unsafeRow.setLong(0, value)
+            unsafeRow
+          }
+
+        }
+        new InterruptibleIterator(taskContext, iter)
+      }
+  }
+
+
+}
+
 /**
  * Physical plan for unioning two plans, without a distinct. This is UNION ALL in SQL.
  *

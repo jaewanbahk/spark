@@ -197,6 +197,7 @@ class JoinSuite extends QueryTest with SharedSQLContext {
   test("inner join, no matches") {
     val x = testData2.where($"a" === 1).as("x")
     val y = testData2.where($"a" === 2).as("y")
+
     checkAnswer(
       x.join(y).where($"x.a" === $"y.a"),
       Nil)
