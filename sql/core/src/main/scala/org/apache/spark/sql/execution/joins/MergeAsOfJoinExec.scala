@@ -60,8 +60,7 @@ case class MergeAsOfJoinExec(left: SparkPlan, right: SparkPlan, leftOn: Expressi
 
   protected override def doExecute(): RDD[InternalRow] = {
 
-    // basic error checking
-    // both data frames must be sorted by the key
+    // basic error checking - both data frames must be sorted by the key
 
     var numOutputRows: Int = 0
 //    val numOutputRows = longMetric("numOutputRows")
@@ -78,10 +77,7 @@ case class MergeAsOfJoinExec(left: SparkPlan, right: SparkPlan, leftOn: Expressi
         val rfirstrow = rightIter.next()
         leftIter.map(leftrow => resultProj(joinedRow(leftrow, rfirstrow)))
       }
-
     }
-
-
   }
 
 

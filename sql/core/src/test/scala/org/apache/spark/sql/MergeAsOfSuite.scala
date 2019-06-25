@@ -41,8 +41,7 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
     df.queryExecution.optimizedPlan.stats.sizeInBytes
   }
 
-  test("append null to left") {
-
+  test("basic merge_asof") {
     val df1 = Seq(
       (2001, 1, 1.0),
       (2001, 2, 1.1),
@@ -50,24 +49,28 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
     ).toDF("time", "id", "v")
 
     val df2 = Seq(
-      (2001, 1, 1.3),
-      (2001, 2, 1.4),
+      (2001, 1, 4),
+      (2001, 2, 5),
     ).toDF("time", "id", "v2")
 
     val res = df1.mergeAsOf(df2, df1("time"), df2("time"), df1("id"), df2("id"))
 
     val expected = Seq(
-      (2001, 1, 1.0, 1.3),
-      (2002, 1, 1.2, 1.3),
-      (2001, 2, 1.1, 1.4)
+      (2001, 1, 1.0, 4),
+      (2002, 1, 1.2, 4),
+      (2001, 2, 1.1, 5)
     ).toDF("time", "id", "v", "v2")
 
-    println(res.show())
-    println(expected.show())
     assert(res.collect() === expected.collect())
 
+    val res2 = df1.select("time", "id").mergeAsOf(df2.withColumn("v3", df2("v2") * 3 cast "Int"), df1("time"), df2("time"), df1("id"), df2("id"))
 
+    val expected2 = Seq(
+      (2001, 1, 4, 12),
+      (2002, 1, 4, 12),
+      (2001, 2, 5, 15)
+    ).toDF("time", "id", "v2", "v3")
 
+    assert(res2.collect() === expected2.collect())
   }
-
 }
