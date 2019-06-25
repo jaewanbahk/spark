@@ -29,22 +29,12 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.util.collection.BitSet
 
-case class MergeAsOfJoinExec(
-                              left: SparkPlan,
-                              right: SparkPlan,
-                              on: String,
-                              leftKeys: Seq[Expression],
-                              rightKeys: Seq[Expression]
-                            ) extends BinaryExecNode {
+case class MergeAsOfJoinExec(left: SparkPlan, right: SparkPlan, leftOn: Expression,
+                              rightOn: Expression, leftKeys: Seq[Expression],
+                              rightKeys: Seq[Expression]) extends BinaryExecNode {
 
+   override def output: Seq[Attribute] = left.output ++ right.output.map(_.withNullability((true)))
 
-  // override def output: Seq[Attribute] = left.output ++ right.output.map(_.withNullability((true)))
-  // TODO filter
-
-  override def output: Seq[Attribute] = left.output ++ right.output
-  // TODO filter
-
-  //override def output: Seq[Attribute] = left.output ++ right.output.drop(2)
   override def outputPartitioning: Partitioning = left.outputPartitioning
 
   override def requiredChildDistribution: Seq[Distribution] =
@@ -55,8 +45,6 @@ case class MergeAsOfJoinExec(
   override def requiredChildOrdering: Seq[Seq[SortOrder]] = {
     leftKeys.map(SortOrder(_, Ascending)) :: rightKeys.map(SortOrder(_, Ascending)) :: Nil
   }
-
-  // key generators spill and inmemory threshold
 
   private def getKeyOrdering(keys: Seq[Expression], childOutputOrdering: Seq[SortOrder])
     : Seq[SortOrder] = {
@@ -71,49 +59,25 @@ case class MergeAsOfJoinExec(
   }
 
   protected override def doExecute(): RDD[InternalRow] = {
-    println("exec doexecute()")
-    println("left output " + left.output + " right output " + right.output)
 
     // basic error checking
     // both data frames must be sorted by the key
 
-      var numOutputRows: Int = 0
+    var numOutputRows: Int = 0
 //    val numOutputRows = longMetric("numOutputRows")
 
     val inputSchema = left.output ++ right.output
 
-
-    println(inputSchema)
-    println(output)
-
     left.execute().zipPartitions(right.execute()) { (leftIter, rightIter) =>
-      // println("left: " + leftIter.hasNext + " right: " + rightIter.hasNext)
       val resultProj: InternalRow => InternalRow = UnsafeProjection.create(output, inputSchema)
       if (!leftIter.hasNext || !rightIter.hasNext) {
-        println("if")
         Iterator.empty
       }
       else {
-        println("else")
-
         val joinedRow = new JoinedRow()
         val rfirstrow = rightIter.next()
-//        val proj = UnsafeProjection.create(leftKeys, left.output)
-        leftIter.map(leftrow => {
-          //        resultProj(new joinedRow(leftrow, rfirstrow))
-          //          resultProj(joinedRow(leftrow, rfirstrow))
-          val ret = resultProj(joinedRow(leftrow, rfirstrow))
-          println(ret)
-          ret
-          //        new JoinedRow(leftrow, rfirstrow)))
-          //        UnsafeProjection.create(leftKeys)(joinedRow(leftrow, rfirstrow))
-          //          joinedRow(leftrow, UnsafeProjection.create(leftKeys)(rfirstrow))
-          }
-        )
+        leftIter.map(leftrow => resultProj(joinedRow(leftrow, rfirstrow)))
       }
-
-      // figure out zip! TODO
-      // how many parititons on left how many on right**
 
     }
 

@@ -389,28 +389,23 @@ object MergeAsOf {
             leftBy: Expression,
             rightBy: Expression
            ): MergeAsOf = {
-    new MergeAsOf(left, right, leftOn.toString, Seq(leftBy), Seq(rightBy))
+    new MergeAsOf(left, right, leftOn, rightOn, Seq(leftBy), Seq(rightBy))
   }
-//  def apply(left: LogicalPlan, right: LogicalPlan, on: String, by: Seq[String]t
-//  ): MergeAsOf = {
-//    new MergeAsOf(left, right, on, by)
-//  }
-//
-//  def apply(left: LogicalPlan, right: LogicalPlan, )
 }
 
 case class MergeAsOf(
                      left: LogicalPlan,
                      right: LogicalPlan,
-                     on: String,
+                     leftOn: Expression,
+                     rightOn: Expression,
                      leftKeys: Seq[Expression],
                      rightKeys: Seq[Expression]
                      ) extends BinaryNode {
-  // figure out how to accept polymorphic by
-  override def output: Seq[Attribute] = {
-    left.output ++ right.output
-  }
-  println("basic logical case class")
+
+  // TODO polymorphic keys
+  override def output: Seq[Attribute] = left.output ++ right.output.map(_.withNullability(true))
+
+  def duplicateResolved: Boolean = left.outputSet.intersect(right.outputSet).isEmpty
 }
 
 /**

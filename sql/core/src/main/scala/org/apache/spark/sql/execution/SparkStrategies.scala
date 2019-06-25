@@ -736,8 +736,9 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       case ExternalRDD(outputObjAttr, rdd) => ExternalRDDScanExec(outputObjAttr, rdd) :: Nil
       case r: LogicalRDD =>
         RDDScanExec(r.output, r.rdd, "ExistingRDD", r.outputPartitioning, r.outputOrdering) :: Nil
-      case logical.MergeAsOf(left, right, on, leftKeys, rightKeys) =>
-        joins.MergeAsOfJoinExec(planLater(left), planLater(right), on, leftKeys, rightKeys) :: Nil
+      case logical.MergeAsOf(left, right, leftOn, rightOn, leftKeys, rightKeys) =>
+        joins.MergeAsOfJoinExec(planLater(left), planLater(right),
+          leftOn, rightOn, leftKeys, rightKeys) :: Nil
       case _ => Nil
     }
   }

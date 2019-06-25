@@ -35,7 +35,6 @@ import org.apache.spark.sql.types.StructType
 class MergeAsOfSuite extends QueryTest with SharedSQLContext{
   import testImplicits._
 
-
   setupTestData()
 
   def statisticSizeInByte(df: DataFrame): BigInt = {
@@ -43,6 +42,7 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
   }
 
   test("append null to left") {
+
     val df1 = Seq(
       (2001, 1, 1.0),
       (2001, 2, 1.1),
@@ -56,36 +56,16 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
 
     val res = df1.mergeAsOf(df2, df1("time"), df2("time"), df1("id"), df2("id"))
 
-    println("suite")
-    println(res.queryExecution) //query execution
-
-    res.show()
-
     val expected = Seq(
       (2001, 1, 1.0, 1.3),
       (2002, 1, 1.2, 1.3),
       (2001, 2, 1.1, 1.4)
     ).toDF("time", "id", "v", "v2")
 
-    res.printSchema()
-    expected.printSchema()
+    println(res.show())
+    println(expected.show())
+    assert(res.collect() === expected.collect())
 
-    res.show()
-
-    res.select("v2").show()
-
-    res.select("id", "v").show()
-
-    println(res.select("time", "id", "v", "v2").collect().toSeq)
-    // expected.show()
-
-
-    //print(res.collect())
-
-    // val result2 = df1.join(df2, Seq("time", "id"))
-    // print(result2.collect())
-
-    // assert(res.collect().toSeq == expected.collect().toSeq)
 
 
   }
