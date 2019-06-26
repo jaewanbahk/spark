@@ -1198,7 +1198,7 @@ class Dataset[T] private[sql](
                    rightOn: Column,
                    leftBy: Column,
                    rightBy: Column): DataFrame = {
-    withPlan{
+    withPlan {
       MergeAsOf(logicalPlan, right.logicalPlan, leftOn.expr,
         rightOn.expr, leftBy.expr, rightBy.expr)
     }
@@ -3422,8 +3422,6 @@ class Dataset[T] private[sql](
       // parameter of its `get` method, so it's safe to use null here.
       objProj(row).get(0, null).asInstanceOf[T]
     }
-
-
   }
 
   private def sortInternal(global: Boolean, sortExprs: Seq[Column]): Dataset[T] = {

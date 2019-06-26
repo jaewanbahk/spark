@@ -382,25 +382,20 @@ case class Join(
 }
 
 object MergeAsOf {
-  def apply(left: LogicalPlan,
-            right: LogicalPlan,
-            leftOn: Expression,
-            rightOn: Expression,
-            leftBy: Expression,
-            rightBy: Expression
-           ): MergeAsOf = {
+  def apply(left: LogicalPlan, right: LogicalPlan, leftOn: Expression,
+            rightOn: Expression, leftBy: Expression, rightBy: Expression): MergeAsOf = {
     new MergeAsOf(left, right, leftOn, rightOn, leftBy, rightBy)
   }
 }
 
 case class MergeAsOf(
-                     left: LogicalPlan,
-                     right: LogicalPlan,
-                     leftOn: Expression,
-                     rightOn: Expression,
-                     leftBy: Expression,
-                     rightBy: Expression
-                     ) extends BinaryNode {
+    left: LogicalPlan,
+    right: LogicalPlan,
+    leftOn: Expression,
+    rightOn: Expression,
+    leftBy: Expression,
+    rightBy: Expression)
+  extends BinaryNode {
 
   // TODO polymorphic keys
   override def output: Seq[Attribute] = left.output ++ right.output.map(_.withNullability(true))
