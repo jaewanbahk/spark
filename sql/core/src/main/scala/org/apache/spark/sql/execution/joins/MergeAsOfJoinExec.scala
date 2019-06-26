@@ -30,20 +30,20 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.util.collection.BitSet
 
 case class MergeAsOfJoinExec(left: SparkPlan, right: SparkPlan, leftOn: Expression,
-                              rightOn: Expression, leftKeys: Seq[Expression],
-                              rightKeys: Seq[Expression]) extends BinaryExecNode {
+                              rightOn: Expression, leftBy: Expression,
+                              rightBy: Expression) extends BinaryExecNode {
 
    override def output: Seq[Attribute] = left.output ++ right.output.map(_.withNullability((true)))
 
   override def outputPartitioning: Partitioning = left.outputPartitioning
 
   override def requiredChildDistribution: Seq[Distribution] =
-    HashClusteredDistribution(leftKeys) :: HashClusteredDistribution(rightKeys) :: Nil
+    HashClusteredDistribution(Seq(leftBy)) :: HashClusteredDistribution(Seq(rightBy)) :: Nil
 
-  override def outputOrdering: Seq[SortOrder] = getKeyOrdering(leftKeys, left.outputOrdering)
+  override def outputOrdering: Seq[SortOrder] = getKeyOrdering(Seq(leftBy), left.outputOrdering)
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] = {
-    leftKeys.map(SortOrder(_, Ascending)) :: rightKeys.map(SortOrder(_, Ascending)) :: Nil
+    Seq(leftBy).map(SortOrder(_, Ascending)) :: Seq(rightBy).map(SortOrder(_, Ascending)) :: Nil
   }
 
   private def getKeyOrdering(keys: Seq[Expression], childOutputOrdering: Seq[SortOrder])
@@ -71,14 +71,11 @@ case class MergeAsOfJoinExec(left: SparkPlan, right: SparkPlan, leftOn: Expressi
       val resultProj: InternalRow => InternalRow = UnsafeProjection.create(output, inputSchema)
       if (!leftIter.hasNext || !rightIter.hasNext) {
         Iterator.empty
-      }
-      else {
+      } else {
         val joinedRow = new JoinedRow()
         val rfirstrow = rightIter.next()
         leftIter.map(leftrow => resultProj(joinedRow(leftrow, rfirstrow)))
       }
     }
   }
-
-
 }

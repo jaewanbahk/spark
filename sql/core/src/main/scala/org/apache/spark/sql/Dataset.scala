@@ -1193,10 +1193,6 @@ class Dataset[T] private[sql](
     joinWith(other, condition, "inner")
   }
 
-  def mergeAsOf[U](right: Dataset[U], on: Column, by: Column): DataFrame = {
-    mergeAsOf(right, on, on, by, by)
-  }
-
   def mergeAsOf[U](right: Dataset[U],
                    leftOn: Column,
                    rightOn: Column,
@@ -3421,7 +3417,6 @@ class Dataset[T] private[sql](
     // This projection writes output to a `InternalRow`, which means applying this projection is not
     // thread-safe. Here we create the projection inside this method to make `Dataset` thread-safe.
     val objProj = GenerateSafeProjection.generate(deserializer :: Nil)
-
     plan.executeCollect().map { row =>
       // The row returned by SafeProjection is `SpecificInternalRow`, which ignore the data type
       // parameter of its `get` method, so it's safe to use null here.

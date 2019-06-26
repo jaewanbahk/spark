@@ -631,7 +631,6 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
 
   object BasicOperators extends Strategy {
     def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
-
       case d: DataWritingCommand => DataWritingCommandExec(d, planLater(d.query)) :: Nil
       case r: RunnableCommand => ExecutedCommandExec(r) :: Nil
 
@@ -736,9 +735,9 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       case ExternalRDD(outputObjAttr, rdd) => ExternalRDDScanExec(outputObjAttr, rdd) :: Nil
       case r: LogicalRDD =>
         RDDScanExec(r.output, r.rdd, "ExistingRDD", r.outputPartitioning, r.outputOrdering) :: Nil
-      case logical.MergeAsOf(left, right, leftOn, rightOn, leftKeys, rightKeys) =>
+      case logical.MergeAsOf(left, right, leftOn, rightOn, leftBy, rightBy) =>
         joins.MergeAsOfJoinExec(planLater(left), planLater(right),
-          leftOn, rightOn, leftKeys, rightKeys) :: Nil
+          leftOn, rightOn, leftBy, rightBy) :: Nil
       case _ => Nil
     }
   }

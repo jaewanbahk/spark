@@ -389,7 +389,7 @@ object MergeAsOf {
             leftBy: Expression,
             rightBy: Expression
            ): MergeAsOf = {
-    new MergeAsOf(left, right, leftOn, rightOn, Seq(leftBy), Seq(rightBy))
+    new MergeAsOf(left, right, leftOn, rightOn, leftBy, rightBy)
   }
 }
 
@@ -398,8 +398,8 @@ case class MergeAsOf(
                      right: LogicalPlan,
                      leftOn: Expression,
                      rightOn: Expression,
-                     leftKeys: Seq[Expression],
-                     rightKeys: Seq[Expression]
+                     leftBy: Expression,
+                     rightBy: Expression
                      ) extends BinaryNode {
 
   // TODO polymorphic keys

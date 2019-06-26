@@ -182,7 +182,7 @@ class Analyzer(
       ResolveWindowOrder ::
       ResolveWindowFrame ::
       ResolveNaturalAndUsingJoin ::
-      ResolveAsofJoin ::
+      ResolveMergeAsof ::
       ResolveOutputRelation ::
       ExtractWindowExpressions ::
       GlobalAggregates ::
@@ -2269,16 +2269,15 @@ class Analyzer(
     }
   }
 
-  object ResolveAsofJoin extends Rule[LogicalPlan] {
+  object ResolveMergeAsof extends Rule[LogicalPlan] {
     override def apply(plan: LogicalPlan): LogicalPlan = plan match {
-      case m @ MergeAsOf(left, right, leftOn, rightOn, leftKeys, rightKeys)
+      case m @ MergeAsOf(left, right, leftOn, rightOn, leftBy, rightBy)
         if left.resolved && right.resolved && m.duplicateResolved => {
-          val lUniqueOutput = left.output.filterNot(att => leftKeys.contains(att) || att == leftOn)
-          val rUniqueOutput = right.output.filterNot(att =>
-            rightKeys.contains(att) || att == rightOn)
+          val lUniqueOutput = left.output.filterNot(att => leftBy == att || leftOn == att)
+          val rUniqueOutput = right.output.filterNot(att => rightBy == att || rightOn == att)
 
           val output = Seq(leftOn.asInstanceOf[Attribute]) ++
-            leftKeys.map {expr => expr.asInstanceOf[Attribute]} ++ lUniqueOutput ++ rUniqueOutput
+            leftBy.map {expr => expr.asInstanceOf[Attribute]} ++ lUniqueOutput ++ rUniqueOutput
           Project(output, plan)
         }
       case _ => plan
