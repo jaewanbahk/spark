@@ -17,33 +17,44 @@
 
 package org.apache.spark.sql.execution.joins
 
+import scala.concurrent.duration._
+import scala.util.control.Breaks._
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.BindReferences.bindReferences
-import org.apache.spark.sql.catalyst.expressions.codegen._
-import org.apache.spark.sql.catalyst.expressions.codegen.Block._
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.util.collection.BitSet
 
-case class MergeAsOfJoinExec(left: SparkPlan, right: SparkPlan, leftOn: Expression,
-                              rightOn: Expression, leftBy: Expression,
-                              rightBy: Expression) extends BinaryExecNode {
 
-   override def output: Seq[Attribute] = left.output ++ right.output.map(_.withNullability((true)))
+case class MergeAsOfJoinExec(
+    left: SparkPlan,
+    right: SparkPlan,
+    leftOn: Expression,
+    rightOn: Expression,
+    leftBy: Expression,
+    rightBy: Expression,
+    tolerance: String) extends BinaryExecNode {
+
+  override def output: Seq[Attribute] = left.output ++ right.output.map(_.withNullability((true)))
 
   override def outputPartitioning: Partitioning = left.outputPartitioning
 
   override def requiredChildDistribution: Seq[Distribution] =
     HashClusteredDistribution(Seq(leftBy)) :: HashClusteredDistribution(Seq(rightBy)) :: Nil
 
-  override def outputOrdering: Seq[SortOrder] = getKeyOrdering(Seq(leftBy), left.outputOrdering)
+  override def outputOrdering: Seq[SortOrder] =
+    getKeyOrdering(Seq(leftBy, leftOn), left.outputOrdering)
+  // ordered by ticker then time
+  // TODO look at sparkplan
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] = {
-    Seq(leftBy).map(SortOrder(_, Ascending)) :: Seq(rightBy).map(SortOrder(_, Ascending)) :: Nil
+    Seq(leftBy, leftOn).map(SortOrder(_, Ascending)) ::
+      Seq(rightBy).map(SortOrder(_, Ascending)) :: Nil
   }
 
   private def getKeyOrdering(keys: Seq[Expression], childOutputOrdering: Seq[SortOrder])
@@ -58,23 +69,71 @@ case class MergeAsOfJoinExec(left: SparkPlan, right: SparkPlan, leftOn: Expressi
     }
   }
 
+  private def match_tolerance(
+      currLeft: (InternalRow, Iterator[InternalRow]),
+      currRight: (InternalRow, Iterator[InternalRow]),
+      duration: Duration,
+      resultProj: InternalRow => InternalRow
+  ): Iterator[InternalRow] = {
+    val joinedRow = new JoinedRow()
+    var rHead = if (currRight._2.hasNext) {
+      currRight._2.next()
+    } else {
+      InternalRow.empty
+    }
+    var rPrev = rHead.copy()
+
+    currLeft._2.map(lHead => {
+        breakable {
+          while (rHead.getInt(0) <= lHead.getInt(0)) {
+            // TODO make index agnostic and check by type (timestamp)
+            var rHeadCopy = rHead.copy()
+            if (currRight._2.hasNext) {
+              rPrev = rHeadCopy.copy()
+              rHeadCopy = currRight._2.next()
+            } else {
+              break
+            }
+          }
+        }
+        if (rPrev == InternalRow.empty || rPrev.getInt(0) > lHead.getInt(0)) {
+          var dummy = InternalRow(0, 0, 0.0, 0.0) // TODO find better dummy object
+          dummy.setNullAt(1)
+          resultProj(joinedRow(lHead, dummy))
+        } else {
+          resultProj(joinedRow(lHead, rPrev))
+        }
+      }
+    )
+  }
+
   protected override def doExecute(): RDD[InternalRow] = {
 
-    // basic error checking - both data frames must be sorted by the key
-
-    var numOutputRows: Int = 0
-//    val numOutputRows = longMetric("numOutputRows")
-
+    val duration = Duration(tolerance)
     val inputSchema = left.output ++ right.output
 
     left.execute().zipPartitions(right.execute()) { (leftIter, rightIter) =>
       val resultProj: InternalRow => InternalRow = UnsafeProjection.create(output, inputSchema)
       if (!leftIter.hasNext || !rightIter.hasNext) {
-        Iterator.empty
+        leftIter
       } else {
         val joinedRow = new JoinedRow()
-        val rfirstrow = rightIter.next()
-        leftIter.map(leftrow => resultProj(joinedRow(leftrow, rfirstrow)))
+        val rightGroupedIterator =
+          GroupedIterator(rightIter, Seq(rightBy), right.output)
+
+        if (rightGroupedIterator.hasNext) {
+          var currRight = rightGroupedIterator.next()
+          val leftGroupedIterator =
+            GroupedIterator(leftIter, Seq(leftBy), left.output)
+          if (leftGroupedIterator.hasNext) {
+            var currLeft = leftGroupedIterator.next()
+            match_tolerance(currLeft, currRight, duration, resultProj)
+          } else {
+            Iterator.empty
+          }
+        } else {
+          Iterator.empty
+        }
       }
     }
   }

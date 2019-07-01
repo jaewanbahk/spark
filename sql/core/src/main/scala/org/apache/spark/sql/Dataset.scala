@@ -1193,14 +1193,28 @@ class Dataset[T] private[sql](
     joinWith(other, condition, "inner")
   }
 
-  def mergeAsOf[U](right: Dataset[U],
-                   leftOn: Column,
-                   rightOn: Column,
-                   leftBy: Column,
-                   rightBy: Column): DataFrame = {
+  def mergeAsOf[U](
+      right: Dataset[U],
+      leftOn: Column,
+      rightOn: Column,
+      leftBy: Column,
+      rightBy: Column,
+      tolerance: String): DataFrame = {
     withPlan {
-      MergeAsOf(logicalPlan, right.logicalPlan, leftOn.expr,
-        rightOn.expr, leftBy.expr, rightBy.expr)
+      MergeAsOf(logicalPlan, right.logicalPlan, leftOn.expr, rightOn.expr,
+        leftBy.expr, rightBy.expr, tolerance)
+    }
+  }
+
+  def mergeAsOf[U](
+      right: Dataset[U],
+      leftOn: Column,
+      rightOn: Column,
+      leftBy: Column,
+      rightBy: Column): DataFrame = {
+    withPlan {
+      MergeAsOf(logicalPlan, right.logicalPlan, leftOn.expr, rightOn.expr,
+        leftBy.expr, rightBy.expr, "0ms") // TODO add tolerance functionality
     }
   }
 

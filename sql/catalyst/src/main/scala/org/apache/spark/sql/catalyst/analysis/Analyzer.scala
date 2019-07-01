@@ -22,7 +22,6 @@ import java.util.Locale
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.util.Random
-
 import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalog.v2.{CatalogNotFoundException, CatalogPlugin, LookupCatalog}
 import org.apache.spark.sql.catalyst._
@@ -2271,7 +2270,7 @@ class Analyzer(
 
   object ResolveMergeAsof extends Rule[LogicalPlan] {
     override def apply(plan: LogicalPlan): LogicalPlan = plan match {
-      case m @ MergeAsOf(left, right, leftOn, rightOn, leftBy, rightBy)
+      case m @ MergeAsOf(left, right, leftOn, rightOn, leftBy, rightBy, tolerance)
         if left.resolved && right.resolved && m.duplicateResolved => {
           val lUniqueOutput = left.output.filterNot(att => leftBy == att || leftOn == att)
           val rUniqueOutput = right.output.filterNot(att => rightBy == att || rightOn == att)
