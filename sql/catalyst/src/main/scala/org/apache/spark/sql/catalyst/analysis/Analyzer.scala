@@ -184,6 +184,7 @@ class Analyzer(
       ResolveWindowOrder ::
       ResolveWindowFrame ::
       ResolveNaturalAndUsingJoin ::
+      ResolveMergeAsof ::
       ResolveOutputRelation ::
       ExtractWindowExpressions ::
       GlobalAggregates ::
@@ -2283,6 +2284,21 @@ class Analyzer(
         // find common column names from both sides
         val joinNames = left.output.map(_.name).intersect(right.output.map(_.name))
         commonNaturalJoinProcessing(left, right, joinType, joinNames, condition, hint)
+    }
+  }
+
+  object ResolveMergeAsof extends Rule[LogicalPlan] {
+    override def apply(plan: LogicalPlan): LogicalPlan = plan match {
+      case m @ MergeAsOf(left, right, leftOn, rightOn, leftBy, rightBy, tolerance)
+        if left.resolved && right.resolved && m.duplicateResolved => {
+          val lUniqueOutput = left.output.filterNot(att => leftBy == att || leftOn == att)
+          val rUniqueOutput = right.output.filterNot(att => rightBy == att || rightOn == att)
+
+          val output = Seq(leftOn.asInstanceOf[Attribute]) ++
+            leftBy.map {expr => expr.asInstanceOf[Attribute]} ++ lUniqueOutput ++ rUniqueOutput
+          Project(output, plan)
+        }
+      case _ => plan
     }
   }
 

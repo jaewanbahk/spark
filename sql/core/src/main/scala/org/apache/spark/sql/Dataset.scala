@@ -1193,6 +1193,19 @@ class Dataset[T] private[sql](
     joinWith(other, condition, "inner")
   }
 
+  def mergeAsOf[U](
+      right: Dataset[U],
+      leftOn: Column,
+      rightOn: Column,
+      leftBy: Column,
+      rightBy: Column,
+      tolerance: String = "0ms"): DataFrame = {
+    withPlan {
+      MergeAsOf(logicalPlan, right.logicalPlan, leftOn.expr, rightOn.expr,
+        leftBy.expr, rightBy.expr, tolerance)
+    }
+  }
+
   /**
    * Returns a new Dataset with each partition sorted by the given expressions.
    *

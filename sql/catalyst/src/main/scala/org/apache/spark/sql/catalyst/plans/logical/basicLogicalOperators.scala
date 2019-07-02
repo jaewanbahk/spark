@@ -381,6 +381,29 @@ case class Join(
   }
 }
 
+object MergeAsOf {
+  def apply(left: LogicalPlan, right: LogicalPlan, leftOn: Expression, rightOn: Expression,
+            leftBy: Expression, rightBy: Expression, tolerance: String): MergeAsOf = {
+    new MergeAsOf(left, right, leftOn, rightOn, leftBy, rightBy, tolerance)
+  }
+}
+
+case class MergeAsOf(
+    left: LogicalPlan,
+    right: LogicalPlan,
+    leftOn: Expression,
+    rightOn: Expression,
+    leftBy: Expression,
+    rightBy: Expression,
+    tolerance: String)
+  extends BinaryNode {
+
+  // TODO polymorphic keys
+  override def output: Seq[Attribute] = left.output ++ right.output.map(_.withNullability(true))
+
+  def duplicateResolved: Boolean = left.outputSet.intersect(right.outputSet).isEmpty
+}
+
 /**
  * Base trait for DataSourceV2 write commands
  */
