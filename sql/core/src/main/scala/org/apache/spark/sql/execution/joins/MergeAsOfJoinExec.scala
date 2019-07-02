@@ -49,16 +49,15 @@ case class MergeAsOfJoinExec(
 
   override def outputOrdering: Seq[SortOrder] =
     getKeyOrdering(Seq(leftBy, leftOn), left.outputOrdering)
-  // ordered by ticker then time
-  // TODO look at sparkplan
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] = {
     Seq(leftBy, leftOn).map(SortOrder(_, Ascending)) ::
-      Seq(rightBy).map(SortOrder(_, Ascending)) :: Nil
+      Seq(rightBy, rightOn).map(SortOrder(_, Ascending)) :: Nil
   }
 
   private val emptyVal: Array[Any] = Array.fill(right.output.length)(null)
   private def rDummy = InternalRow(emptyVal: _*)
+  private def joinedRow = new JoinedRow()
 
   private def getKeyOrdering(keys: Seq[Expression], childOutputOrdering: Seq[SortOrder])
     : Seq[SortOrder] = {
@@ -75,10 +74,10 @@ case class MergeAsOfJoinExec(
   private def match_tolerance(
       currLeft: (InternalRow, Iterator[InternalRow]),
       currRight: (InternalRow, Iterator[InternalRow]),
-      duration: Duration,
+      tolerance: Duration,
       resultProj: InternalRow => InternalRow
   ): Iterator[InternalRow] = {
-    val joinedRow = new JoinedRow()
+//    val joinedRow = new JoinedRow()
     var rHead = if (currRight._2.hasNext) {
       currRight._2.next()
     } else {
@@ -114,9 +113,10 @@ case class MergeAsOfJoinExec(
     val inputSchema = left.output ++ right.output
 
     left.execute().zipPartitions(right.execute()) { (leftIter, rightIter) =>
+//      val joinedRow = new JoinedRow()
       val resultProj: InternalRow => InternalRow = UnsafeProjection.create(output, inputSchema)
       if (!leftIter.hasNext || !rightIter.hasNext) {
-        leftIter
+        leftIter.map(r => resultProj(joinedRow(r, rDummy)))
       } else {
         val joinedRow = new JoinedRow()
         val rightGroupedIterator =

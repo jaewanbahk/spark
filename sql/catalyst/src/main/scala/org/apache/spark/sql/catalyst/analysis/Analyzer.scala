@@ -22,6 +22,7 @@ import java.util.Locale
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.util.Random
+
 import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalog.v2.{CatalogNotFoundException, CatalogPlugin, LookupCatalog}
 import org.apache.spark.sql.catalyst._
