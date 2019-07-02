@@ -120,11 +120,16 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
       (2001, 1, 5),
       (2001, 4, 4),
     ).toDF("time", "id", "v2")
-    // should get left entirely (same # of rows of left table)
 
     val res = df1.mergeAsOf(df2, df1("time"), df2("time"), df1("id"), df2("id"))
 
-    res.show()
+    val expected = Seq(
+      (2001, 1, 1.0, 5),
+      (2002, 1, 1.2, 5),
+      (2001, 2, 1.1, 0)
+    ).toDF("time", "id", "v", "v2")
+
+    assert(res.collect() === expected.collect())
   }
 
   test("complete key mismatch") {
@@ -141,6 +146,12 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
 
     val res = df1.mergeAsOf(df2, df1("time"), df2("time"), df1("id"), df2("id"))
 
-    res.show()
+    val expected = Seq(
+      (2001, 1, 1.0, 0),
+      (2002, 1, 1.2, 0),
+      (2001, 2, 1.1, 0)
+    ).toDF("time", "id", "v", "v2")
+
+    assert(res.collect() === expected.collect())
   }
 }

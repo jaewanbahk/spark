@@ -57,6 +57,9 @@ case class MergeAsOfJoinExec(
       Seq(rightBy).map(SortOrder(_, Ascending)) :: Nil
   }
 
+  private val emptyVal: Array[Any] = Array.fill(right.output.length)(null)
+  private def rDummy = InternalRow(emptyVal: _*)
+
   private def getKeyOrdering(keys: Seq[Expression], childOutputOrdering: Seq[SortOrder])
     : Seq[SortOrder] = {
     val requiredOrdering = keys.map(SortOrder(_, Ascending))
@@ -97,9 +100,7 @@ case class MergeAsOfJoinExec(
           }
         }
         if (rPrev == InternalRow.empty || rPrev.getInt(0) > lHead.getInt(0)) {
-          var dummy = InternalRow(0, 0, 0.0, 0.0) // TODO find better dummy object
-          dummy.setNullAt(1)
-          resultProj(joinedRow(lHead, dummy))
+          resultProj(joinedRow(lHead, rDummy))
         } else {
           resultProj(joinedRow(lHead, rPrev))
         }
