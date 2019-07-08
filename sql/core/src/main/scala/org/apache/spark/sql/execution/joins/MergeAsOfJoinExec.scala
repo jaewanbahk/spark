@@ -55,6 +55,7 @@ case class MergeAsOfJoinExec(
       Seq(rightBy, rightOn).map(SortOrder(_, Ascending)) :: Nil
   }
 
+  private val joinedRow = new JoinedRow()
   private val emptyVal: Array[Any] = Array.fill(right.output.length)(null)
   private def rDummy = InternalRow(emptyVal: _*)
 
@@ -97,9 +98,9 @@ case class MergeAsOfJoinExec(
           }
         }
         if (rPrev == InternalRow.empty || rPrev.getInt(0) > lHead.getInt(0)) {
-          resultProj(new JoinedRow(lHead, rDummy))
+          resultProj(joinedRow(lHead, rDummy))
         } else {
-          resultProj(new JoinedRow(lHead, rPrev))
+          resultProj(joinedRow(lHead, rPrev))
         }
       }
     )
@@ -112,7 +113,7 @@ case class MergeAsOfJoinExec(
     left.execute().zipPartitions(right.execute()) { (leftIter, rightIter) =>
       val resultProj: InternalRow => InternalRow = UnsafeProjection.create(output, output)
       if (!leftIter.hasNext || !rightIter.hasNext) {
-        leftIter.map(r => resultProj(new JoinedRow(r, rDummy)))
+        leftIter.map(r => resultProj(joinedRow(r, rDummy)))
       } else {
         val rightGroupedIterator =
           GroupedIterator(rightIter, Seq(rightBy), right.output)
