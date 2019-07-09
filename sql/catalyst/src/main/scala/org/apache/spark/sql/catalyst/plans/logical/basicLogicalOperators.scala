@@ -383,8 +383,9 @@ case class Join(
 
 object MergeAsOf {
   def apply(left: LogicalPlan, right: LogicalPlan, leftOn: Expression, rightOn: Expression,
-            leftBy: Expression, rightBy: Expression, tolerance: String): MergeAsOf = {
-    new MergeAsOf(left, right, leftOn, rightOn, leftBy, rightBy, tolerance)
+            leftBy: Expression, rightBy: Expression, tolerance: Long,
+            allowExactMatches: Boolean): MergeAsOf = {
+    new MergeAsOf(left, right, leftOn, rightOn, leftBy, rightBy, tolerance, allowExactMatches)
   }
 }
 
@@ -395,7 +396,8 @@ case class MergeAsOf(
     rightOn: Expression,
     leftBy: Expression,
     rightBy: Expression,
-    tolerance: String)
+    tolerance: Long,
+    allowExactMatches: Boolean)
   extends BinaryNode {
 
   // TODO polymorphic keys

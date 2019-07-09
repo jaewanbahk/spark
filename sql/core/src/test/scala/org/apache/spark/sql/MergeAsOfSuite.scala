@@ -17,16 +17,10 @@
 
 package org.apache.spark.sql
 
-import java.util.Locale
+import java.sql.Timestamp
 
-import scala.collection.JavaConverters._
-import scala.collection.mutable.ListBuffer
-
-import org.apache.spark.TestUtils.{assertNotSpilled, assertSpilled}
-import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
 import org.apache.spark.sql.catalyst.expressions.{Ascending, SortOrder}
-import org.apache.spark.sql.execution.{BinaryExecNode, SortExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.test.SharedSQLContext
@@ -37,22 +31,22 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
 
   test("basic merge") {
     val df1 = Seq(
-      (2001, 1, 1.0),
-      (2001, 2, 1.1),
-      (2002, 1, 1.2)
+      (new Timestamp(2001), 1, 1.0),
+      (new Timestamp(2001), 2, 1.1),
+      (new Timestamp(2002), 1, 1.2)
     ).toDF("time", "id", "v")
 
     val df2 = Seq(
-      (2001, 1, 4),
-      (2001, 2, 5),
+      (new Timestamp(2001), 1, 4),
+      (new Timestamp(2001), 2, 5),
     ).toDF("time", "id", "v2")
 
     checkAnswer(
       df1.mergeAsOf(df2, df1("time"), df2("time"), df1("id"), df2("id")),
       Seq(
-        Row(2001, 1, 1.0, 4),
-        Row(2002, 1, 1.2, 4),
-        Row(2001, 2, 1.1, 5)
+        Row(new Timestamp(2001), 1, 1.0, 4),
+        Row(new Timestamp(2002), 1, 1.2, 4),
+        Row(new Timestamp(2001), 2, 1.1, 5)
       ))
 
     checkAnswer(
@@ -60,84 +54,144 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
         df2.withColumn("v3", df2("v2") * 3 cast "Int"), df1("time"), df2("time"), df1("id"), df2("id")
       ),
       Seq(
-        Row(2001, 1, 4, 12),
-        Row(2002, 1, 4, 12),
-        Row(2001, 2, 5, 15)
+        Row(new Timestamp(2001), 1, 4, 12),
+        Row(new Timestamp(2002), 1, 4, 12),
+        Row(new Timestamp(2001), 2, 5, 15)
       ))
   }
 
   test("default merge_asof") {
     val quotes = Seq(
-      (23, "GOOG", 720.50, 720.93),
-      (23, "MSFT", 51.95, 51.96),
-      (30, "MSFT", 51.97, 51.98),
-      (41, "MSFT", 51.99, 52.00),
-      (48, "GOOG", 720.50, 720.93),
-      (49, "AAPL", 97.99, 98.01),
-      (72, "GOOG", 720.50, 720.88),
-      (75, "MSFT", 52.01, 52.03)
+      (new Timestamp(23), "GOOG", 720.50, 720.93),
+      (new Timestamp(23), "MSFT", 51.95, 51.96),
+      (new Timestamp(30), "MSFT", 51.97, 51.98),
+      (new Timestamp(41), "MSFT", 51.99, 52.00),
+      (new Timestamp(48), "GOOG", 720.50, 720.93),
+      (new Timestamp(49), "AAPL", 97.99, 98.01),
+      (new Timestamp(72), "GOOG", 720.50, 720.88),
+      (new Timestamp(75), "MSFT", 52.01, 52.03)
     ).toDF("time", "ticker", "bid", "ask")
 
     val trades = Seq(
-      (23, "MSFT", 51.95, 75),
-      (38, "MSFT", 51.95, 155),
-      (48, "GOOG", 720.77, 100),
-      (48, "GOOG", 720.92, 100),
-      (48, "AAPL", 98.00, 100)
+      (new Timestamp(23), "MSFT", 51.95, 75),
+      (new Timestamp(38), "MSFT", 51.95, 155),
+      (new Timestamp(48), "GOOG", 720.77, 100),
+      (new Timestamp(48), "GOOG", 720.92, 100),
+      (new Timestamp(48), "AAPL", 98.00, 100)
     ).toDF("time", "ticker", "price", "quantity")
 
-    val res = trades.mergeAsOf(quotes, trades("time"), quotes("time"), trades("ticker"), quotes("ticker"), "2ms")
-
     checkAnswer(
-      trades.mergeAsOf(quotes, trades("time"), quotes("time"), trades("ticker"), quotes("ticker"), "2ms"),
+      trades.mergeAsOf(quotes, trades("time"), quotes("time"), trades("ticker"), quotes("ticker")),
       Seq(
-        Row(23, "MSFT", 51.95, 75, 51.95, 51.96),
-        Row(38, "MSFT", 51.95, 155, 51.97, 51.98),
-        Row(48, "GOOG", 720.77, 100, 720.5, 720.93),
-        Row(48, "GOOG", 720.92, 100, 720.5, 720.93),
-        Row(48, "AAPL", 98.0, 100, null, null)
+        Row(new Timestamp(23), "MSFT", 51.95, 75, 51.95, 51.96),
+        Row(new Timestamp(38), "MSFT", 51.95, 155, 51.97, 51.98),
+        Row(new Timestamp(48), "GOOG", 720.77, 100, 720.5, 720.93),
+        Row(new Timestamp(48), "GOOG", 720.92, 100, 720.5, 720.93),
+        Row(new Timestamp(48), "AAPL", 98.0, 100, null, null)
       ))
   }
 
   test("partial key mismatch") {
     val df1 = Seq(
-      (2001, 1, 1.0),
-      (2001, 2, 1.1),
-      (2002, 1, 1.2)
+      (new Timestamp(2001), 1, 1.0),
+      (new Timestamp(2001), 2, 1.1),
+      (new Timestamp(2002), 1, 1.2)
     ).toDF("time", "id", "v")
 
     val df2 = Seq(
-      (2001, 1, 5),
-      (2001, 4, 4),
+      (new Timestamp(2001), 1, 5),
+      (new Timestamp(2001), 4, 4),
     ).toDF("time", "id", "v2")
 
     checkAnswer(
       df1.mergeAsOf(df2, df1("time"), df2("time"), df1("id"), df2("id")),
       Seq(
-        Row(2001, 1, 1.0, 5),
-        Row(2002, 1, 1.2, 5),
-        Row(2001, 2, 1.1, null)
+        Row(new Timestamp(2001), 1, 1.0, 5),
+        Row(new Timestamp(2002), 1, 1.2, 5),
+        Row(new Timestamp(2001), 2, 1.1, null)
       ))
   }
 
   test("complete key mismatch") {
     val df1 = Seq(
-      (2001, 1, 1.0),
-      (2001, 2, 1.1),
-      (2002, 1, 1.2)
+      (new Timestamp(2001), 1, 1.0),
+      (new Timestamp(2001), 2, 1.1),
+      (new Timestamp(2002), 1, 1.2)
     ).toDF("time", "id", "v")
 
     val df2 = Seq(
-      (2001, 3, 5),
-      (2001, 4, 4),
+      (new Timestamp(2001), 3, 5),
+      (new Timestamp(2001), 4, 4),
     ).toDF("time", "id", "v2")
 
     checkAnswer(
       df1.mergeAsOf(df2, df1("time"), df2("time"), df1("id"), df2("id")),
       Seq(
-        Row(2001, 1, 1.0, null),
-        Row(2002, 1, 1.2, null),
-        Row(2001, 2, 1.1, null)
+        Row(new Timestamp(2001), 1, 1.0, null),
+        Row(new Timestamp(2002), 1, 1.2, null),
+        Row(new Timestamp(2001), 2, 1.1, null)
+      ))
+  }
+
+  test("merge_asof tolerance") {
+    val quotes = Seq(
+      (new Timestamp(23), "GOOG", 720.50, 720.93),
+      (new Timestamp(23), "MSFT", 51.95, 51.96),
+      (new Timestamp(30), "MSFT", 51.97, 51.98),
+      (new Timestamp(41), "MSFT", 51.99, 52.00),
+      (new Timestamp(48), "GOOG", 720.50, 720.93),
+      (new Timestamp(49), "AAPL", 97.99, 98.01),
+      (new Timestamp(72), "GOOG", 720.50, 720.88),
+      (new Timestamp(75), "MSFT", 52.01, 52.03)
+    ).toDF("time", "ticker", "bid", "ask")
+
+    val trades = Seq(
+      (new Timestamp(23), "MSFT", 51.95, 75),
+      (new Timestamp(38), "MSFT", 51.95, 155),
+      (new Timestamp(48), "GOOG", 720.77, 100),
+      (new Timestamp(48), "GOOG", 720.92, 100),
+      (new Timestamp(48), "AAPL", 98.00, 100)
+    ).toDF("time", "ticker", "price", "quantity")
+
+    checkAnswer(
+      trades.mergeAsOf(quotes, trades("time"), quotes("time"), trades("ticker"), quotes("ticker"), 2),
+      Seq(
+        Row(new Timestamp(23), "MSFT", 51.95, 75, 51.95, 51.96),
+        Row(new Timestamp(38), "MSFT", 51.95, 155, null, null),
+        Row(new Timestamp(48), "GOOG", 720.77, 100, 720.5, 720.93),
+        Row(new Timestamp(48), "GOOG", 720.92, 100, 720.5, 720.93),
+        Row(new Timestamp(48), "AAPL", 98.0, 100, null, null)
+      ))
+  }
+
+  test("merge_asof tolerance allow exact matches") {
+    val quotes = Seq(
+      (new Timestamp(23), "GOOG", 720.50, 720.93),
+      (new Timestamp(23), "MSFT", 51.95, 51.96),
+      (new Timestamp(30), "MSFT", 51.97, 51.98),
+      (new Timestamp(41), "MSFT", 51.99, 52.00),
+      (new Timestamp(48), "GOOG", 720.50, 720.93),
+      (new Timestamp(49), "AAPL", 97.99, 98.01),
+      (new Timestamp(72), "GOOG", 720.50, 720.88),
+      (new Timestamp(75), "MSFT", 52.01, 52.03)
+    ).toDF("time", "ticker", "bid", "ask")
+
+    val trades = Seq(
+      (new Timestamp(23), "MSFT", 51.95, 75),
+      (new Timestamp(38), "MSFT", 51.95, 155),
+      (new Timestamp(48), "GOOG", 720.77, 100),
+      (new Timestamp(48), "GOOG", 720.92, 100),
+      (new Timestamp(48), "AAPL", 98.00, 100)
+    ).toDF("time", "ticker", "price", "quantity")
+
+    checkAnswer(
+      trades.mergeAsOf(quotes, trades("time"), quotes("time"), trades("ticker"), quotes("ticker"), 10, false),
+      Seq(
+        Row(new Timestamp(23), "MSFT", 51.95, 75, null, null),
+        Row(new Timestamp(38), "MSFT", 51.95, 155, 51.97, 51.98),
+        Row(new Timestamp(48), "GOOG", 720.77, 100, null, null),
+        Row(new Timestamp(48), "GOOG", 720.92, 100, null, null),
+        Row(new Timestamp(48), "AAPL", 98.0, 100, null, null)
       ))
   }
 }

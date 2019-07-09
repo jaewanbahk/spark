@@ -740,9 +740,9 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       case ExternalRDD(outputObjAttr, rdd) => ExternalRDDScanExec(outputObjAttr, rdd) :: Nil
       case r: LogicalRDD =>
         RDDScanExec(r.output, r.rdd, "ExistingRDD", r.outputPartitioning, r.outputOrdering) :: Nil
-      case logical.MergeAsOf(left, right, leftOn, rightOn, leftBy, rightBy, tolerance) =>
-        joins.MergeAsOfJoinExec(planLater(left), planLater(right), leftOn, rightOn,
-          leftBy, rightBy, tolerance) :: Nil
+      case logical.MergeAsOf(l, r, leftOn, rightOn, leftBy, rightBy, tolerance, exact) =>
+        joins.MergeAsOfJoinExec(planLater(l), planLater(r), leftOn, rightOn, leftBy, rightBy,
+          tolerance, exact) :: Nil
       case _ => Nil
     }
   }
