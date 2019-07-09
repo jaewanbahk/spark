@@ -55,9 +55,9 @@ case class MergeAsOfJoinExec(
       Seq(rightBy, rightOn).map(SortOrder(_, Ascending)) :: Nil
   }
 
+  private val joinedRow = new JoinedRow()
   private val emptyVal: Array[Any] = Array.fill(right.output.length)(null)
   private def rDummy = InternalRow(emptyVal: _*)
-  private def joinedRow = new JoinedRow()
 
   private def getKeyOrdering(keys: Seq[Expression], childOutputOrdering: Seq[SortOrder])
     : Seq[SortOrder] = {
@@ -77,7 +77,6 @@ case class MergeAsOfJoinExec(
       tolerance: Duration,
       resultProj: InternalRow => InternalRow
   ): Iterator[InternalRow] = {
-//    val joinedRow = new JoinedRow()
     var rHead = if (currRight._2.hasNext) {
       currRight._2.next()
     } else {
@@ -110,15 +109,12 @@ case class MergeAsOfJoinExec(
   protected override def doExecute(): RDD[InternalRow] = {
 
     val duration = Duration(tolerance)
-    val inputSchema = left.output ++ right.output
 
     left.execute().zipPartitions(right.execute()) { (leftIter, rightIter) =>
-//      val joinedRow = new JoinedRow()
-      val resultProj: InternalRow => InternalRow = UnsafeProjection.create(output, inputSchema)
+      val resultProj: InternalRow => InternalRow = UnsafeProjection.create(output, output)
       if (!leftIter.hasNext || !rightIter.hasNext) {
         leftIter.map(r => resultProj(joinedRow(r, rDummy)))
       } else {
-        val joinedRow = new JoinedRow()
         val rightGroupedIterator =
           GroupedIterator(rightIter, Seq(rightBy), right.output)
 

@@ -35,12 +35,6 @@ import org.apache.spark.sql.types.StructType
 class MergeAsOfSuite extends QueryTest with SharedSQLContext{
   import testImplicits._
 
-  setupTestData()
-
-  def statisticSizeInByte(df: DataFrame): BigInt = {
-    df.queryExecution.optimizedPlan.stats.sizeInBytes
-  }
-
   test("basic merge") {
     val df1 = Seq(
       (2001, 1, 1.0),
@@ -53,25 +47,23 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
       (2001, 2, 5),
     ).toDF("time", "id", "v2")
 
-    val res = df1.mergeAsOf(df2, df1("time"), df2("time"), df1("id"), df2("id"))
+    checkAnswer(
+      df1.mergeAsOf(df2, df1("time"), df2("time"), df1("id"), df2("id")),
+      Seq(
+        Row(2001, 1, 1.0, 4),
+        Row(2002, 1, 1.2, 4),
+        Row(2001, 2, 1.1, 5)
+      ))
 
-    val expected = Seq(
-      (2001, 1, 1.0, 4),
-      (2002, 1, 1.2, 4),
-      (2001, 2, 1.1, 5)
-    ).toDF("time", "id", "v", "v2")
-
-    assert(res.collect() === expected.collect())
-
-    val res2 = df1.select("time", "id").mergeAsOf(df2.withColumn("v3", df2("v2") * 3 cast "Int"), df1("time"), df2("time"), df1("id"), df2("id"))
-
-    val expected2 = Seq(
-      (2001, 1, 4, 12),
-      (2002, 1, 4, 12),
-      (2001, 2, 5, 15)
-    ).toDF("time", "id", "v2", "v3")
-
-    assert(res2.collect() === expected2.collect())
+    checkAnswer(
+      df1.select("time", "id").mergeAsOf(
+        df2.withColumn("v3", df2("v2") * 3 cast "Int"), df1("time"), df2("time"), df1("id"), df2("id")
+      ),
+      Seq(
+        Row(2001, 1, 4, 12),
+        Row(2002, 1, 4, 12),
+        Row(2001, 2, 5, 15)
+      ))
   }
 
   test("default merge_asof") {
@@ -96,17 +88,15 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
 
     val res = trades.mergeAsOf(quotes, trades("time"), quotes("time"), trades("ticker"), quotes("ticker"), "2ms")
 
-    val expected = Seq(
-      (23, "MSFT", 51.95, 75, 51.95, 51.96),
-      (38, "MSFT", 51.95, 155, 51.97, 51.98),
-      (48, "GOOG", 720.77, 100, 720.5, 720.93),
-      (48, "GOOG", 720.92, 100, 720.5, 720.93),
-      (48, "AAPL", 98.0, 100, 0.0, 0.0)
-    ).toDF("time", "ticker", "price", "quantity", "bid", "ask")
-
-    res.show()
-    expected.show()
-//    println(res.collect() === expected.collect()) // TODO sort results by key
+    checkAnswer(
+      trades.mergeAsOf(quotes, trades("time"), quotes("time"), trades("ticker"), quotes("ticker"), "2ms"),
+      Seq(
+        Row(23, "MSFT", 51.95, 75, 51.95, 51.96),
+        Row(38, "MSFT", 51.95, 155, 51.97, 51.98),
+        Row(48, "GOOG", 720.77, 100, 720.5, 720.93),
+        Row(48, "GOOG", 720.92, 100, 720.5, 720.93),
+        Row(48, "AAPL", 98.0, 100, null, null)
+      ))
   }
 
   test("partial key mismatch") {
@@ -121,15 +111,13 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
       (2001, 4, 4),
     ).toDF("time", "id", "v2")
 
-    val res = df1.mergeAsOf(df2, df1("time"), df2("time"), df1("id"), df2("id"))
-
-    val expected = Seq(
-      (2001, 1, 1.0, 5),
-      (2002, 1, 1.2, 5),
-      (2001, 2, 1.1, 0)
-    ).toDF("time", "id", "v", "v2")
-
-    assert(res.collect() === expected.collect())
+    checkAnswer(
+      df1.mergeAsOf(df2, df1("time"), df2("time"), df1("id"), df2("id")),
+      Seq(
+        Row(2001, 1, 1.0, 5),
+        Row(2002, 1, 1.2, 5),
+        Row(2001, 2, 1.1, null)
+      ))
   }
 
   test("complete key mismatch") {
@@ -144,14 +132,12 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
       (2001, 4, 4),
     ).toDF("time", "id", "v2")
 
-    val res = df1.mergeAsOf(df2, df1("time"), df2("time"), df1("id"), df2("id"))
-
-    val expected = Seq(
-      (2001, 1, 1.0, 0),
-      (2002, 1, 1.2, 0),
-      (2001, 2, 1.1, 0)
-    ).toDF("time", "id", "v", "v2")
-
-    assert(res.collect() === expected.collect())
+    checkAnswer(
+      df1.mergeAsOf(df2, df1("time"), df2("time"), df1("id"), df2("id")),
+      Seq(
+        Row(2001, 1, 1.0, null),
+        Row(2002, 1, 1.2, null),
+        Row(2001, 2, 1.1, null)
+      ))
   }
 }
