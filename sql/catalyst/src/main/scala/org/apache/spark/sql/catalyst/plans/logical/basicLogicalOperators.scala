@@ -387,7 +387,7 @@ object MergeAsOf {
   def apply(left: LogicalPlan, right: LogicalPlan, leftOn: Expression, rightOn: Expression,
             leftBy: Expression, rightBy: Expression, tolerance: String,
             allowExactMatches: Boolean): MergeAsOf = {
-    val duration = if (tolerance != null) {
+    val duration = if (Duration(tolerance).isFinite) {
       Duration(tolerance).toMillis
     } else {
       Long.MaxValue
