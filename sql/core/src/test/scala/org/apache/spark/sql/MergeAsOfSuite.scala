@@ -154,7 +154,7 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
     ).toDF("time", "ticker", "price", "quantity")
 
     checkAnswer(
-      trades.mergeAsOf(quotes, trades("time"), quotes("time"), trades("ticker"), quotes("ticker"), 2),
+      trades.mergeAsOf(quotes, trades("time"), quotes("time"), trades("ticker"), quotes("ticker"), "2ms"),
       Seq(
         Row(new Timestamp(23), "MSFT", 51.95, 75, 51.95, 51.96),
         Row(new Timestamp(38), "MSFT", 51.95, 155, null, null),
@@ -185,7 +185,7 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
     ).toDF("time", "ticker", "price", "quantity")
 
     checkAnswer(
-      trades.mergeAsOf(quotes, trades("time"), quotes("time"), trades("ticker"), quotes("ticker"), 10, false),
+      trades.mergeAsOf(quotes, trades("time"), quotes("time"), trades("ticker"), quotes("ticker"), "10ms", false),
       Seq(
         Row(new Timestamp(23), "MSFT", 51.95, 75, null, null),
         Row(new Timestamp(38), "MSFT", 51.95, 155, 51.97, 51.98),

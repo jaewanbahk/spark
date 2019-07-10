@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.catalyst.plans.logical
 
+import scala.concurrent.duration.Duration
+
 import org.apache.spark.sql.catalog.v2.{Identifier, TableCatalog}
 import org.apache.spark.sql.catalog.v2.expressions.Transform
 import org.apache.spark.sql.catalyst.AliasIdentifier
@@ -383,9 +385,14 @@ case class Join(
 
 object MergeAsOf {
   def apply(left: LogicalPlan, right: LogicalPlan, leftOn: Expression, rightOn: Expression,
-            leftBy: Expression, rightBy: Expression, tolerance: Long,
+            leftBy: Expression, rightBy: Expression, tolerance: String,
             allowExactMatches: Boolean): MergeAsOf = {
-    new MergeAsOf(left, right, leftOn, rightOn, leftBy, rightBy, tolerance, allowExactMatches)
+    val duration = if (tolerance != null) {
+      Duration(tolerance).toMillis
+    } else {
+      Long.MaxValue
+    }
+    new MergeAsOf(left, right, leftOn, rightOn, leftBy, rightBy, duration, allowExactMatches)
   }
 }
 

@@ -1212,7 +1212,7 @@ class Dataset[T] private[sql](
       rightOn: Column,
       leftBy: Column,
       rightBy: Column,
-      tolerance: Long = Long.MaxValue,
+      tolerance: String = null,
       allowExactMatches: Boolean = true): DataFrame = {
     withPlan {
       MergeAsOf(logicalPlan, right.logicalPlan, leftOn.expr, rightOn.expr,

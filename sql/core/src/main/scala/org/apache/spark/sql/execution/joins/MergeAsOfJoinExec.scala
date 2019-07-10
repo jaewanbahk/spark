@@ -82,6 +82,7 @@ case class MergeAsOfJoinExec(
   private def match_tolerance(
       currLeft: (InternalRow, Iterator[InternalRow]),
       currRight: (InternalRow, Iterator[InternalRow]),
+      tolerance: Long,
       resultProj: InternalRow => InternalRow
   ): Iterator[InternalRow] = {
     var rHead = if (currRight._2.hasNext) {
@@ -138,7 +139,7 @@ case class MergeAsOfJoinExec(
             GroupedIterator(leftIter, Seq(leftBy), left.output)
           if (leftGroupedIterator.hasNext) {
             var currLeft = leftGroupedIterator.next()
-            match_tolerance(currLeft, currRight, resultProj)
+            match_tolerance(currLeft, currRight, tolerance, resultProj)
           } else {
             Iterator.empty
           }
