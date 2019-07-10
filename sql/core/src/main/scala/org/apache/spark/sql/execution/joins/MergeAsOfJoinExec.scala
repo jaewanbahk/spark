@@ -17,20 +17,21 @@
 
 package org.apache.spark.sql.execution.joins
 
-import scala.concurrent.duration._
 import scala.util.control.Breaks._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.expressions.BindReferences.bindReferences
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.util.collection.BitSet
 
-
+/**
+ * Performs an as-of merge join of two DataFrames.
+ *
+ * This class takes the left and right plans and joins them using a grouped iterator. The "on"
+ * value is compared to determine whether that right row will be merged with the left or not.
+ */
 case class MergeAsOfJoinExec(
     left: SparkPlan,
     right: SparkPlan,
@@ -38,7 +39,8 @@ case class MergeAsOfJoinExec(
     rightOn: Expression,
     leftBy: Expression,
     rightBy: Expression,
-    tolerance: String) extends BinaryExecNode {
+    tolerance: Long,
+    allowExactMatches: Boolean) extends BinaryExecNode {
 
   override def output: Seq[Attribute] = left.output ++ right.output.map(_.withNullability((true)))
 
@@ -59,6 +61,11 @@ case class MergeAsOfJoinExec(
   private val emptyVal: Array[Any] = Array.fill(right.output.length)(null)
   private def rDummy = InternalRow(emptyVal: _*)
 
+  /**
+    * Utility method to get output ordering for left or right side of the join.
+    *
+    * Taken from [[SortMergeJoinExec]]
+    */
   private def getKeyOrdering(keys: Seq[Expression], childOutputOrdering: Seq[SortOrder])
     : Seq[SortOrder] = {
     val requiredOrdering = keys.map(SortOrder(_, Ascending))
@@ -71,10 +78,11 @@ case class MergeAsOfJoinExec(
     }
   }
 
+  // Helper function performing the join using grouped iterators taking tolerance into account.
   private def match_tolerance(
       currLeft: (InternalRow, Iterator[InternalRow]),
       currRight: (InternalRow, Iterator[InternalRow]),
-      tolerance: Duration,
+      tolerance: Long,
       resultProj: InternalRow => InternalRow
   ): Iterator[InternalRow] = {
     var rHead = if (currRight._2.hasNext) {
@@ -85,31 +93,38 @@ case class MergeAsOfJoinExec(
     var rPrev = rHead.copy()
 
     currLeft._2.map(lHead => {
-        breakable {
-          while (rHead.getInt(0) <= lHead.getInt(0)) {
-            // TODO make index agnostic and check by type (timestamp)
-            var rHeadCopy = rHead.copy()
-            if (currRight._2.hasNext) {
-              rPrev = rHeadCopy.copy()
-              rHeadCopy = currRight._2.next()
-            } else {
-              break
-            }
+      val leftKeyProj = UnsafeProjection.create(Seq(leftOn), left.output)
+      val rightKeyProj = UnsafeProjection.create(Seq(rightOn), right.output)
+      breakable {
+        // Use pointers to determine candidacy of the joining of right rows to left.
+        while (allowExactMatches && rightKeyProj(rHead).getLong(0) <= leftKeyProj(lHead).getLong(0)
+          || !allowExactMatches && rightKeyProj(rHead).getLong(0) < leftKeyProj(lHead).getLong(0)) {
+          var rHeadCopy = rHead.copy()
+          if (currRight._2.hasNext) {
+            rPrev = rHeadCopy.copy()
+            rHeadCopy = currRight._2.next()
+          } else {
+            break
           }
         }
-        if (rPrev == InternalRow.empty || rPrev.getInt(0) > lHead.getInt(0)) {
-          resultProj(joinedRow(lHead, rDummy))
-        } else {
-          resultProj(joinedRow(lHead, rPrev))
-        }
       }
+      // Obtain the left and right keys of the rows in consideration by projection.
+      var lProj = leftKeyProj(lHead).getLong(0)
+      var rProj = rightKeyProj(rPrev).getLong(0)
+      val toleranceCond = tolerance != Long.MaxValue && rProj + tolerance*1000 < lProj
+
+      if (rPrev == InternalRow.empty ||
+        allowExactMatches && (rProj > lProj || toleranceCond) ||
+        !allowExactMatches && (rProj >= lProj || toleranceCond)) {
+        resultProj(joinedRow(lHead, rDummy))
+      } else {
+        resultProj(joinedRow(lHead, rPrev))
+      }}
     )
   }
 
   protected override def doExecute(): RDD[InternalRow] = {
-
-    val duration = Duration(tolerance)
-
+    // Zip the left and right plans to group by key.
     left.execute().zipPartitions(right.execute()) { (leftIter, rightIter) =>
       val resultProj: InternalRow => InternalRow = UnsafeProjection.create(output, output)
       if (!leftIter.hasNext || !rightIter.hasNext) {
@@ -124,7 +139,7 @@ case class MergeAsOfJoinExec(
             GroupedIterator(leftIter, Seq(leftBy), left.output)
           if (leftGroupedIterator.hasNext) {
             var currLeft = leftGroupedIterator.next()
-            match_tolerance(currLeft, currRight, duration, resultProj)
+            match_tolerance(currLeft, currRight, tolerance, resultProj)
           } else {
             Iterator.empty
           }

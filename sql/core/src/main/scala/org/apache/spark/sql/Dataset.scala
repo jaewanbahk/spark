@@ -1193,16 +1193,30 @@ class Dataset[T] private[sql](
     joinWith(other, condition, "inner")
   }
 
+  /**
+    * Merge As-Of Join with another 'DataFrame'.
+    *
+    * Different from other join functions, joining is with inexact time matching criteria.
+    *
+    * @param right Right side of the join operation.
+    * @param leftOn Field name to join on in left DataFrame.
+    * @param rightOn Field name to join on in right DataFrame.
+    * @param leftBy Field names to match on in the left DataFrame.
+    * @param rightBy Field names to match on in the right DataFrame.
+    * @param tolerance Long or TimeStamp, where the As-Of time difference within this range.
+    * @param allowExactMatches If True, allow matching with the same 'on' value.
+    */
   def mergeAsOf[U](
       right: Dataset[U],
       leftOn: Column,
       rightOn: Column,
       leftBy: Column,
       rightBy: Column,
-      tolerance: String = "0ms"): DataFrame = {
+      tolerance: String = "Inf",
+      allowExactMatches: Boolean = true): DataFrame = {
     withPlan {
       MergeAsOf(logicalPlan, right.logicalPlan, leftOn.expr, rightOn.expr,
-        leftBy.expr, rightBy.expr, tolerance)
+        leftBy.expr, rightBy.expr, tolerance, allowExactMatches)
     }
   }
 

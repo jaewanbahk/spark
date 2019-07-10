@@ -2289,7 +2289,7 @@ class Analyzer(
 
   object ResolveMergeAsof extends Rule[LogicalPlan] {
     override def apply(plan: LogicalPlan): LogicalPlan = plan match {
-      case m @ MergeAsOf(left, right, leftOn, rightOn, leftBy, rightBy, tolerance)
+      case m @ MergeAsOf(left, right, leftOn, rightOn, leftBy, rightBy, tolerance, exact)
         if left.resolved && right.resolved && m.duplicateResolved => {
           val lUniqueOutput = left.output.filterNot(att => leftBy == att || leftOn == att)
           val rUniqueOutput = right.output.filterNot(att => rightBy == att || rightOn == att)
