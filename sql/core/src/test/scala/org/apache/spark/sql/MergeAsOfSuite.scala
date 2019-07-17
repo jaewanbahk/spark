@@ -194,4 +194,42 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
         Row(new Timestamp(48), "AAPL", 98.0, 100, null, null)
       ))
   }
+
+  test("generated tests") {
+
+    val df = Seq(
+      (new Timestamp(100), 1, "a"),
+      (new Timestamp(101), 2, "a"),
+      (new Timestamp(102), 3, "a"),
+      (new Timestamp(103), 4, "a"),
+      (new Timestamp(104), 5, "a"),
+      (new Timestamp(105), 6, "a"),
+      (new Timestamp(106), 7, "a"),
+      (new Timestamp(107), 8, "a"),
+      (new Timestamp(108), 9, "a"),
+      (new Timestamp(109), 10, "a"),
+      (new Timestamp(110), 11, "a"),
+      (new Timestamp(111), 12, "a"),
+      (new Timestamp(112), 13, "a"),
+      (new Timestamp(113), 14, "a"),
+      (new Timestamp(114), 15, "a"),
+      (new Timestamp(115), 16, "a"),
+      (new Timestamp(116), 17, "a")
+    ).toDF("time", "id", "v")
+
+    val df1 = Seq(
+      (new Timestamp(100), 1, "b"),
+      (new Timestamp(101), 2, "b"),
+      (new Timestamp(102), 3, "b"),
+      (new Timestamp(103), 4, "b"),
+      (new Timestamp(104), 5, "b"),
+      (new Timestamp(105), 6, "b")
+    ).toDF("time", "id", "v2")
+
+    val res1 = df.mergeAsOf(df, df("time"), df("time"), df("id"), df("id"))
+    res1.show()
+    val res2 = df.mergeAsOf(df1, df("time"), df1("time"), df("id"), df1("id"))
+    res2.show()
+
+  }
 }
