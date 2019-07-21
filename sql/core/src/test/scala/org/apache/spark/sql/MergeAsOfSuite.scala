@@ -19,12 +19,9 @@ package org.apache.spark.sql
 
 import java.sql.Timestamp
 
-import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
-import org.apache.spark.sql.catalyst.expressions.{Ascending, SortOrder}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.test.SharedSQLContext
-import org.apache.spark.sql.types.StructType
 
 class MergeAsOfSuite extends QueryTest with SharedSQLContext{
   import testImplicits._
@@ -195,20 +192,81 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
       ))
   }
 
-  test("generated tests") {
-
+  test("self asof on larger dataset") {
     val df = Seq(
       (new Timestamp(100), 1, "a"),
+      (new Timestamp(117), 1, "b"),
+      (new Timestamp(118), 1, "c"),
+      (new Timestamp(119), 1, "d"),
       (new Timestamp(101), 2, "a"),
       (new Timestamp(102), 3, "a"),
       (new Timestamp(103), 4, "a"),
       (new Timestamp(104), 5, "a"),
       (new Timestamp(105), 6, "a"),
+      (new Timestamp(120), 6, "b"),
+      (new Timestamp(121), 6, "c"),
       (new Timestamp(106), 7, "a"),
       (new Timestamp(107), 8, "a"),
       (new Timestamp(108), 9, "a"),
       (new Timestamp(109), 10, "a"),
       (new Timestamp(110), 11, "a"),
+      (new Timestamp(122), 11, "b"),
+      (new Timestamp(111), 12, "a"),
+      (new Timestamp(112), 13, "a"),
+      (new Timestamp(113), 14, "a"),
+      (new Timestamp(114), 15, "a"),
+      (new Timestamp(115), 16, "a"),
+      (new Timestamp(116), 17, "a")
+    ).toDF("time", "id", "v")
+
+    checkAnswer(
+      df.mergeAsOf(df, df("time"), df("time"), df("id"), df("id")),
+      Seq(
+        Row(new Timestamp(100), 1, "a", "a"),
+        Row(new Timestamp(117), 1, "b", "b"),
+        Row(new Timestamp(118), 1, "c", "c"),
+        Row(new Timestamp(119), 1, "d", "d"),
+        Row(new Timestamp(101), 2, "a", "a"),
+        Row(new Timestamp(102), 3, "a", "a"),
+        Row(new Timestamp(103), 4, "a", "a"),
+        Row(new Timestamp(104), 5, "a", "a"),
+        Row(new Timestamp(105), 6, "a", "a"),
+        Row(new Timestamp(120), 6, "b", "b"),
+        Row(new Timestamp(121), 6, "c", "c"),
+        Row(new Timestamp(106), 7, "a", "a"),
+        Row(new Timestamp(107), 8, "a", "a"),
+        Row(new Timestamp(108), 9, "a", "a"),
+        Row(new Timestamp(109), 10, "a", "a"),
+        Row(new Timestamp(110), 11, "a", "a"),
+        Row(new Timestamp(122), 11, "b", "b"),
+        Row(new Timestamp(111), 12, "a", "a"),
+        Row(new Timestamp(112), 13, "a", "a"),
+        Row(new Timestamp(113), 14, "a", "a"),
+        Row(new Timestamp(114), 15, "a", "a"),
+        Row(new Timestamp(115), 16, "a", "a"),
+        Row(new Timestamp(116), 17, "a", "a")
+      ))
+  }
+
+  test("asof on left superset on larger dataset") {
+    val df = Seq(
+      (new Timestamp(100), 1, "a"),
+      (new Timestamp(117), 1, "b"),
+      (new Timestamp(118), 1, "c"),
+      (new Timestamp(119), 1, "d"),
+      (new Timestamp(101), 2, "a"),
+      (new Timestamp(102), 3, "a"),
+      (new Timestamp(103), 4, "a"),
+      (new Timestamp(104), 5, "a"),
+      (new Timestamp(105), 6, "a"),
+      (new Timestamp(120), 6, "b"),
+      (new Timestamp(121), 6, "c"),
+      (new Timestamp(106), 7, "a"),
+      (new Timestamp(107), 8, "a"),
+      (new Timestamp(108), 9, "a"),
+      (new Timestamp(109), 10, "a"),
+      (new Timestamp(110), 11, "a"),
+      (new Timestamp(122), 11, "b"),
       (new Timestamp(111), 12, "a"),
       (new Timestamp(112), 13, "a"),
       (new Timestamp(113), 14, "a"),
@@ -219,17 +277,201 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
 
     val df1 = Seq(
       (new Timestamp(100), 1, "b"),
-      (new Timestamp(101), 2, "b"),
-      (new Timestamp(102), 3, "b"),
-      (new Timestamp(103), 4, "b"),
-      (new Timestamp(104), 5, "b"),
-      (new Timestamp(105), 6, "b")
+      (new Timestamp(101), 3, "b"),
+      (new Timestamp(102), 5, "b"),
+      (new Timestamp(103), 7, "b"),
+      (new Timestamp(104), 9, "b"),
+      (new Timestamp(105), 11, "b")
     ).toDF("time", "id", "v2")
 
-    val res1 = df.mergeAsOf(df, df("time"), df("time"), df("id"), df("id"))
-    res1.show()
-    val res2 = df.mergeAsOf(df1, df("time"), df1("time"), df("id"), df1("id"))
-    res2.show()
+    checkAnswer(
+      df.mergeAsOf(df1, df("time"), df1("time"), df("id"), df1("id")),
+      Seq(
+        Row(new Timestamp(100), 1, "a", "b"),
+        Row(new Timestamp(117), 1, "b", "b"),
+        Row(new Timestamp(118), 1, "c", "b"),
+        Row(new Timestamp(119), 1, "d", "b"),
+        Row(new Timestamp(101), 2, "a", null),
+        Row(new Timestamp(102), 3, "a", "b"),
+        Row(new Timestamp(103), 4, "a", null),
+        Row(new Timestamp(104), 5, "a", "b"),
+        Row(new Timestamp(105), 6, "a", null),
+        Row(new Timestamp(120), 6, "b", null),
+        Row(new Timestamp(121), 6, "c", null),
+        Row(new Timestamp(106), 7, "a", "b"),
+        Row(new Timestamp(107), 8, "a", null),
+        Row(new Timestamp(108), 9, "a", "b"),
+        Row(new Timestamp(109), 10, "a", null),
+        Row(new Timestamp(110), 11, "a", "b"),
+        Row(new Timestamp(122), 11, "b", "b"),
+        Row(new Timestamp(111), 12, "a", null),
+        Row(new Timestamp(112), 13, "a", null),
+        Row(new Timestamp(113), 14, "a", null),
+        Row(new Timestamp(114), 15, "a", null),
+        Row(new Timestamp(115), 16, "a", null),
+        Row(new Timestamp(116), 17, "a", null)
+      ))
+  }
 
+  test("asof on right superset on larger dataset") {
+    val df = Seq(
+      (new Timestamp(100), 1, "a"),
+      (new Timestamp(117), 1, "b"),
+      (new Timestamp(118), 1, "c"),
+      (new Timestamp(119), 1, "d"),
+      (new Timestamp(101), 2, "a"),
+      (new Timestamp(102), 3, "a"),
+      (new Timestamp(103), 4, "a"),
+      (new Timestamp(104), 5, "a"),
+      (new Timestamp(105), 6, "a"),
+      (new Timestamp(120), 6, "b"),
+      (new Timestamp(121), 6, "c"),
+      (new Timestamp(106), 7, "a"),
+      (new Timestamp(107), 8, "a"),
+      (new Timestamp(108), 9, "a"),
+      (new Timestamp(109), 10, "a"),
+      (new Timestamp(110), 11, "a"),
+      (new Timestamp(122), 11, "b"),
+      (new Timestamp(111), 12, "a"),
+      (new Timestamp(112), 13, "a"),
+      (new Timestamp(113), 14, "a"),
+      (new Timestamp(114), 15, "a"),
+      (new Timestamp(115), 16, "a"),
+      (new Timestamp(116), 17, "a")
+    ).toDF("time", "id", "v")
+
+    val df1 = Seq(
+      (new Timestamp(100), 1, "b"),
+      (new Timestamp(101), 3, "b"),
+      (new Timestamp(102), 5, "b"),
+      (new Timestamp(103), 7, "b"),
+      (new Timestamp(104), 9, "b"),
+      (new Timestamp(105), 11, "b")
+    ).toDF("time", "id", "v2")
+
+    checkAnswer(
+      df1.mergeAsOf(df, df1("time"), df("time"), df1("id"), df("id")),
+      Seq(
+        Row(new Timestamp(100), 1, "b", "a"),
+        Row(new Timestamp(101), 3, "b", null),
+        Row(new Timestamp(102), 5, "b", null),
+        Row(new Timestamp(103), 7, "b", null),
+        Row(new Timestamp(104), 9, "b", null),
+        Row(new Timestamp(105), 11, "b", null)
+      ))
+  }
+
+  test("asof on left intersect on larger dataset") {
+    val df = Seq(
+      (new Timestamp(100), 1, "a"),
+      (new Timestamp(117), 1, "b"),
+      (new Timestamp(118), 1, "c"),
+      (new Timestamp(119), 1, "d"),
+      (new Timestamp(101), 2, "a"),
+      (new Timestamp(102), 3, "a"),
+      (new Timestamp(103), 4, "a"),
+      (new Timestamp(104), 5, "a"),
+      (new Timestamp(105), 6, "a"),
+      (new Timestamp(120), 6, "b"),
+      (new Timestamp(121), 6, "c"),
+      (new Timestamp(106), 7, "a"),
+      (new Timestamp(107), 8, "a"),
+      (new Timestamp(108), 9, "a"),
+      (new Timestamp(109), 10, "a"),
+      (new Timestamp(110), 11, "a"),
+      (new Timestamp(122), 11, "b"),
+      (new Timestamp(111), 12, "a"),
+      (new Timestamp(112), 13, "a"),
+      (new Timestamp(113), 14, "a"),
+      (new Timestamp(114), 15, "a"),
+      (new Timestamp(115), 16, "a"),
+      (new Timestamp(116), 17, "a")
+    ).toDF("time", "id", "v")
+
+    val df2 = Seq(
+      (new Timestamp(100), 15, "c"),
+      (new Timestamp(101), 16, "c"),
+      (new Timestamp(102), 17, "c"),
+      (new Timestamp(103), 18, "c"),
+      (new Timestamp(104), 19, "c"),
+      (new Timestamp(105), 20, "c")
+    ).toDF("time", "id", "v3")
+
+    checkAnswer(
+      df.mergeAsOf(df2, df("time"), df2("time"), df("id"), df2("id")),
+      Seq(
+        Row(new Timestamp(100), 1, "a", null),
+        Row(new Timestamp(117), 1, "b", null),
+        Row(new Timestamp(118), 1, "c", null),
+        Row(new Timestamp(119), 1, "d", null),
+        Row(new Timestamp(101), 2, "a", null),
+        Row(new Timestamp(102), 3, "a", null),
+        Row(new Timestamp(103), 4, "a", null),
+        Row(new Timestamp(104), 5, "a", null),
+        Row(new Timestamp(105), 6, "a", null),
+        Row(new Timestamp(120), 6, "b", null),
+        Row(new Timestamp(121), 6, "c", null),
+        Row(new Timestamp(106), 7, "a", null),
+        Row(new Timestamp(107), 8, "a", null),
+        Row(new Timestamp(108), 9, "a", null),
+        Row(new Timestamp(109), 10, "a", null),
+        Row(new Timestamp(110), 11, "a", null),
+        Row(new Timestamp(122), 11, "b", null),
+        Row(new Timestamp(111), 12, "a", null),
+        Row(new Timestamp(112), 13, "a", null),
+        Row(new Timestamp(113), 14, "a", null),
+        Row(new Timestamp(114), 15, "a", "c"),
+        Row(new Timestamp(115), 16, "a", "c"),
+        Row(new Timestamp(116), 17, "a", "c")
+      ))
+  }
+
+
+  test("asof on right intersect on larger dataset") {
+    val df = Seq(
+      (new Timestamp(100), 1, "a"),
+      (new Timestamp(117), 1, "b"),
+      (new Timestamp(118), 1, "c"),
+      (new Timestamp(119), 1, "d"),
+      (new Timestamp(101), 2, "a"),
+      (new Timestamp(102), 3, "a"),
+      (new Timestamp(103), 4, "a"),
+      (new Timestamp(104), 5, "a"),
+      (new Timestamp(105), 6, "a"),
+      (new Timestamp(120), 6, "b"),
+      (new Timestamp(121), 6, "c"),
+      (new Timestamp(106), 7, "a"),
+      (new Timestamp(107), 8, "a"),
+      (new Timestamp(108), 9, "a"),
+      (new Timestamp(109), 10, "a"),
+      (new Timestamp(110), 11, "a"),
+      (new Timestamp(122), 11, "b"),
+      (new Timestamp(111), 12, "a"),
+      (new Timestamp(112), 13, "a"),
+      (new Timestamp(113), 14, "a"),
+      (new Timestamp(99), 15, "a"),
+      (new Timestamp(115), 16, "a"),
+      (new Timestamp(100), 17, "a")
+    ).toDF("time", "id", "v")
+
+    val df2 = Seq(
+      (new Timestamp(100), 15, "c"),
+      (new Timestamp(101), 16, "c"),
+      (new Timestamp(102), 17, "c"),
+      (new Timestamp(103), 18, "c"),
+      (new Timestamp(104), 19, "c"),
+      (new Timestamp(105), 20, "c")
+    ).toDF("time", "id", "v3")
+
+    checkAnswer(
+      df2.mergeAsOf(df, df2("time"), df("time"), df2("id"), df("id")),
+      Seq(
+        Row(new Timestamp(100), 15, "c", "a"),
+        Row(new Timestamp(101), 16, "c", null),
+        Row(new Timestamp(102), 17, "c", "a"),
+        Row(new Timestamp(103), 18, "c", null),
+        Row(new Timestamp(104), 19, "c", null),
+        Row(new Timestamp(105), 20, "c", null)
+      ))
   }
 }
