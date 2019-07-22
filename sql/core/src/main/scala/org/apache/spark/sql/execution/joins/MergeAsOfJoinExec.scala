@@ -22,7 +22,6 @@ import scala.util.control.Breaks._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.execution._
 
@@ -74,11 +73,18 @@ case class MergeAsOfJoinExec(
     }
   }
 
+  private def joinedRow: JoinedRow = new JoinedRow()
+  private def rightNullRow: GenericInternalRow = new GenericInternalRow(right.output.length)
+  private def keyOrdering: Ordering[InternalRow] =
+    newNaturalAscendingOrdering(leftBy.map(_.dataType))
+
   protected override def doExecute(): RDD[InternalRow] = {
+
     // Zip the left and right plans to group by key.
     left.execute().zipPartitions(right.execute()) { (leftIter, rightIter) =>
-      val keyOrdering = newNaturalAscendingOrdering(leftBy.map(_.dataType))
       val resultProj: InternalRow => InternalRow = UnsafeProjection.create(output, output)
+      val leftOnProj = UnsafeProjection.create(Seq(leftOn), left.output)
+      val rightOnProj = UnsafeProjection.create(Seq(rightOn), right.output)
 
       val leftGroupedIterator = GroupedIterator(leftIter, Seq(leftBy), left.output)
       val rightGroupedIterator = GroupedIterator(rightIter, Seq(rightBy), right.output)
@@ -87,13 +93,13 @@ case class MergeAsOfJoinExec(
         leftGroupedIterator,
         rightGroupedIterator,
         resultProj,
-        left.output,
-        right.output,
+        leftOnProj,
+        rightOnProj,
         tolerance,
-        leftOn,
-        rightOn,
         exactMatches,
-        keyOrdering
+        keyOrdering,
+        joinedRow,
+        rightNullRow
       ).toScala
     }
   }
@@ -104,26 +110,27 @@ private class MergeAsOfIterator(
   leftGroupedIter: Iterator[(InternalRow, Iterator[InternalRow])],
   rightGroupedIter: Iterator[(InternalRow, Iterator[InternalRow])],
   resultProj: InternalRow => InternalRow,
-  leftOutput: Seq[Attribute],
-  rightOutput: Seq[Attribute],
+  leftProj: UnsafeProjection,
+  rightProj: UnsafeProjection,
   tolerance: Long,
-  leftOn: Expression,
-  rightOn: Expression,
   exactMatches: Boolean,
-  keyOrdering: Ordering[InternalRow]
+  keyOrdering: Ordering[InternalRow],
+  joinRow: JoinedRow,
+  rNullRow: GenericInternalRow
   ) extends RowIterator {
 
   private[this] val leftGroupedIterator = leftGroupedIter
   private[this] val rightGroupedIterator = rightGroupedIter
 
-  private[this] val leftOnProj = UnsafeProjection.create(Seq(leftOn), leftOutput)
-  private[this] val rightOnProj = UnsafeProjection.create(Seq(rightOn), rightOutput)
+  private[this] val leftOnProj = leftProj
+  private[this] val rightOnProj = rightProj
 
-  protected[this] val joinedRow: JoinedRow = new JoinedRow()
-  private[this] val rightNullRow = new GenericInternalRow(rightOutput.length)
+  protected[this] val joinedRow: JoinedRow = joinRow
+  private[this] val rightNullRow = rNullRow
   private[this] var currRight: (InternalRow, Iterator[InternalRow]) = _
   if (rightGroupedIterator.hasNext) currRight = rightGroupedIterator.next()
 
+  // Iterator container populated with matched rows or an empty row projection
   private[this] var resIter: Iterator[InternalRow] = _
 
   override def advanceNext(): Boolean = findNextAsOfJoinRows()
@@ -134,12 +141,11 @@ private class MergeAsOfIterator(
 
   private def findNextAsOfJoinRows(): Boolean = {
     if (resIter != null && resIter.hasNext) {
-      // resIter is either an Iterator returned from match_tolerance or an empty row projection
       true
     } else {
       // resIter empty or exhausted - populate with an iterator
       if (leftGroupedIterator.hasNext) {
-        // Should be called once per left group - will always return true
+        // Called once per left group - will always return true
         val currLeft = leftGroupedIterator.next()
         if (currRight == null) {
           // If there is no right group in the same partition, return null projection
@@ -153,7 +159,7 @@ private class MergeAsOfIterator(
           resIter = currLeft._2.map(r => resultProj(joinedRow(r, rightNullRow)))
         } else if (comp == 0) {
           // Left group key is at right group key - call match tolerance
-          resIter = match_tolerance(currLeft, currRight, tolerance, resultProj)
+          resIter = match_tolerance(currLeft._2, currRight._2, tolerance, resultProj)
         } else {
           // Left group key is ahead of right group key - catch right group up
           var empty = false
@@ -166,12 +172,10 @@ private class MergeAsOfIterator(
             }
             comp = keyOrdering.compare(currLeft._1, currRight._1)
           } while (!empty && comp > 0)
-          // Breaks out of while loop if the groups are matched or the right runs out
           if (empty || comp < 0) {
             resIter = currLeft._2.map(r => resultProj(joinedRow(r, rightNullRow)))
            } else {
-              // If both groups have the same key, proceed with match tolerance
-            resIter = match_tolerance(currLeft, currRight, tolerance, resultProj)
+            resIter = match_tolerance(currLeft._2, currRight._2, tolerance, resultProj)
           }
         }
         // A nonempty resIter will always be returned (1:1 left rows to output left rows)
@@ -185,27 +189,25 @@ private class MergeAsOfIterator(
 
   // Helper function performing the join using grouped iterators taking tolerance into account.
   private def match_tolerance(
-    currLeft: (InternalRow, Iterator[InternalRow]),
-    currRight: (InternalRow, Iterator[InternalRow]),
+    currLeftIter: Iterator[InternalRow],
+    currRightIter: Iterator[InternalRow],
     tolerance: Long,
     resultProj: InternalRow => InternalRow
   ): Iterator[InternalRow] = {
-    // the current groups should be matching and the group should not be empty
-    assert(keyOrdering.compare(currLeft._1, currRight._1) == 0)
-    assert(currRight._2.hasNext)
-
-    val rHead = currRight._2.next()
+    // The current groups should be matching and the group should not be empty.
+    assert(currRightIter.hasNext)
+    val rHead = currRightIter.next()
     var rPrev = rHead.copy()
 
-    currLeft._2.map(lHead => {
+    currLeftIter.map(lHead => {
       breakable {
         // Use pointers to determine candidacy of the joining of right rows to left.
         while (exactMatches && rightOnProj(rHead).getLong(0) <= leftOnProj(lHead).getLong(0)
           || !exactMatches && rightOnProj(rHead).getLong(0) < leftOnProj(lHead).getLong(0)) {
           var rHeadCopy = rHead.copy()
-          if (currRight._2.hasNext) {
+          if (currRightIter.hasNext) {
             rPrev = rHeadCopy.copy()
-            rHeadCopy = currRight._2.next()
+            rHeadCopy = currRightIter.next()
           } else {
             break
           }
@@ -217,10 +219,9 @@ private class MergeAsOfIterator(
       val rProj = rightOnProj(rPrev).getLong(0)
       val toleranceCond = tolerance != Long.MaxValue && rProj + tolerance * 1000 < lProj
 
-      if (rPrev == InternalRow.empty ||
-        exactMatches && (rProj > lProj || toleranceCond) ||
+      if (exactMatches && (rProj > lProj || toleranceCond) ||
         !exactMatches && (rProj >= lProj || toleranceCond)) {
-        resultProj(joinedRow(lHead, new GenericInternalRow(rightOutput.length)))
+        resultProj(joinedRow(lHead, rightNullRow))
       } else {
         resultProj(joinedRow(lHead, rPrev))
       }
