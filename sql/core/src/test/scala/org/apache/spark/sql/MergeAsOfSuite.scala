@@ -192,6 +192,30 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
       ))
   }
 
+  test("merge_asof with non timestamp types") {
+    val quotes = Seq(
+      (1, "GOOG", 720.50, 720.93),
+      (2, "MSFT", 51.95, 51.96),
+      (3, "MSFT", 51.97, 51.98),
+      (4, "MSFT", 51.99, 52.00),
+      (5, "GOOG", 720.50, 720.93),
+      (6, "AAPL", 97.99, 98.01),
+      (7, "GOOG", 720.50, 720.88),
+      (8, "MSFT", 52.01, 52.03)
+    ).toDF("time", "ticker", "bid", "ask")
+
+    val trades = Seq(
+      (new Timestamp(23), "MSFT", 51.95, 75),
+      (new Timestamp(38), "MSFT", 51.95, 155),
+      (new Timestamp(48), "GOOG", 720.77, 100),
+      (new Timestamp(48), "GOOG", 720.92, 100),
+      (new Timestamp(48), "AAPL", 98.00, 100)
+    ).toDF("time", "ticker", "price", "quantity")
+
+    intercept[AnalysisException](trades.mergeAsOf(quotes, trades("time"), quotes("time"), trades("ticker"), quotes("ticker")))
+    intercept[AnalysisException](quotes.mergeAsOf(trades, quotes("time"), trades("time"), quotes("ticker"), trades("ticker")))
+  }
+
   test("self asof on larger dataset") {
     val df = Seq(
       (new Timestamp(100), 1, "a"),
