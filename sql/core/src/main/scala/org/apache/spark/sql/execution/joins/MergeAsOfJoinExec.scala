@@ -73,7 +73,6 @@ case class MergeAsOfJoinExec(
     }
   }
 
-  private def joinedRow: JoinedRow = new JoinedRow()
   private def rightNullRow: GenericInternalRow = new GenericInternalRow(right.output.length)
   private def keyOrdering: Ordering[InternalRow] =
     newNaturalAscendingOrdering(leftBy.map(_.dataType))
@@ -84,7 +83,7 @@ case class MergeAsOfJoinExec(
     left.execute().zipPartitions(right.execute()) { (leftIter, rightIter) =>
       val resultProj: InternalRow => InternalRow = UnsafeProjection.create(output, output)
 
-      val maoScanner = new MergeAsOfScanner(
+      val scanner = new MergeAsOfScanner(
         leftIter,
         rightIter,
         leftOn,
@@ -96,8 +95,7 @@ case class MergeAsOfJoinExec(
       )
 
       new MergeAsOfIterator(
-        maoScanner, resultProj, tolerance, exactMatches, keyOrdering, joinedRow, rightNullRow
-      ).toScala
+        scanner, resultProj, tolerance, exactMatches, keyOrdering, rightNullRow).toScala
     }
   }
 }
@@ -127,7 +125,6 @@ private class MergeAsOfIterator(
     tolerance: Long,
     exactMatches: Boolean,
     keyOrdering: Ordering[InternalRow],
-    joinRow: JoinedRow,
     rNullRow: GenericInternalRow
   ) extends RowIterator {
 
@@ -137,7 +134,7 @@ private class MergeAsOfIterator(
   private[this] val leftOnProj = maoScanner.getLeftProj
   private[this] val rightOnProj = maoScanner.getRightProj
 
-  protected[this] val joinedRow: JoinedRow = joinRow
+  private[this] val joinedRow: JoinedRow = new JoinedRow()
   private[this] val rightNullRow = rNullRow
   private[this] var currRight: (InternalRow, Iterator[InternalRow]) = _
   if (rightGroupedIterator.hasNext) currRight = rightGroupedIterator.next()

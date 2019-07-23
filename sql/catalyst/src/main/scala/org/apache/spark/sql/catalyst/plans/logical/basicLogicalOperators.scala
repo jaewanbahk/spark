@@ -19,6 +19,7 @@ package org.apache.spark.sql.catalyst.plans.logical
 
 import scala.concurrent.duration.Duration
 
+import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalog.v2.{Identifier, TableCatalog}
 import org.apache.spark.sql.catalog.v2.expressions.Transform
 import org.apache.spark.sql.catalyst.AliasIdentifier
@@ -392,6 +393,15 @@ object MergeAsOf {
     } else {
       Long.MaxValue
     }
+
+    if (leftOn.dataType != TimestampType) {
+      throw new AnalysisException("cannot resolve due to data type mismatch: " +
+        s"${leftOn.dataType} should be a TimestampType")
+    } else if (rightOn.dataType != TimestampType) {
+      throw new AnalysisException("cannot resolve due to data type mismatch: " +
+        s"${rightOn.dataType} should be a TimestampType")
+    }
+
     new MergeAsOf(left, right, leftOn, rightOn, leftBy, rightBy, duration, allowExactMatches)
   }
 }
