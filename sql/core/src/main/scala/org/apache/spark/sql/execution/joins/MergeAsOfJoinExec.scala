@@ -83,47 +83,59 @@ case class MergeAsOfJoinExec(
     // Zip the left and right plans to group by key.
     left.execute().zipPartitions(right.execute()) { (leftIter, rightIter) =>
       val resultProj: InternalRow => InternalRow = UnsafeProjection.create(output, output)
-      val leftOnProj = UnsafeProjection.create(Seq(leftOn), left.output)
-      val rightOnProj = UnsafeProjection.create(Seq(rightOn), right.output)
 
-      val leftGroupedIterator = GroupedIterator(leftIter, Seq(leftBy), left.output)
-      val rightGroupedIterator = GroupedIterator(rightIter, Seq(rightBy), right.output)
+      val maoScanner = new MergeAsOfScanner(
+        leftIter,
+        rightIter,
+        leftOn,
+        rightOn,
+        leftBy,
+        rightBy,
+        left.output,
+        right.output
+      )
 
       new MergeAsOfIterator(
-        leftGroupedIterator,
-        rightGroupedIterator,
-        resultProj,
-        leftOnProj,
-        rightOnProj,
-        tolerance,
-        exactMatches,
-        keyOrdering,
-        joinedRow,
-        rightNullRow
+        maoScanner, resultProj, tolerance, exactMatches, keyOrdering, joinedRow, rightNullRow
       ).toScala
     }
   }
 }
 
+private class MergeAsOfScanner(
+    leftIter: Iterator[InternalRow],
+    rightIter: Iterator[InternalRow],
+    leftOn: Expression,
+    rightOn: Expression,
+    leftBy: Expression,
+    rightBy: Expression,
+    leftOutput: Seq[Attribute],
+    rightOutput: Seq[Attribute]) {
+
+  def getLeftGroupedIterator: Iterator[(InternalRow, Iterator[InternalRow])] =
+    GroupedIterator(leftIter, Seq(leftBy), leftOutput)
+  def getRightGroupedIterator: Iterator[(InternalRow, Iterator[InternalRow])] =
+    GroupedIterator(rightIter, Seq(rightBy), rightOutput)
+  def getLeftProj: UnsafeProjection = UnsafeProjection.create(Seq(leftOn), leftOutput)
+  def getRightProj: UnsafeProjection = UnsafeProjection.create(Seq(rightOn), rightOutput)
+}
+
 
 private class MergeAsOfIterator(
-  leftGroupedIter: Iterator[(InternalRow, Iterator[InternalRow])],
-  rightGroupedIter: Iterator[(InternalRow, Iterator[InternalRow])],
-  resultProj: InternalRow => InternalRow,
-  leftProj: UnsafeProjection,
-  rightProj: UnsafeProjection,
-  tolerance: Long,
-  exactMatches: Boolean,
-  keyOrdering: Ordering[InternalRow],
-  joinRow: JoinedRow,
-  rNullRow: GenericInternalRow
+    maoScanner: MergeAsOfScanner,
+    resultProj: InternalRow => InternalRow,
+    tolerance: Long,
+    exactMatches: Boolean,
+    keyOrdering: Ordering[InternalRow],
+    joinRow: JoinedRow,
+    rNullRow: GenericInternalRow
   ) extends RowIterator {
 
-  private[this] val leftGroupedIterator = leftGroupedIter
-  private[this] val rightGroupedIterator = rightGroupedIter
+  private[this] val leftGroupedIterator = maoScanner.getLeftGroupedIterator
+  private[this] val rightGroupedIterator = maoScanner.getRightGroupedIterator
 
-  private[this] val leftOnProj = leftProj
-  private[this] val rightOnProj = rightProj
+  private[this] val leftOnProj = maoScanner.getLeftProj
+  private[this] val rightOnProj = maoScanner.getRightProj
 
   protected[this] val joinedRow: JoinedRow = joinRow
   private[this] val rightNullRow = rNullRow
@@ -196,7 +208,7 @@ private class MergeAsOfIterator(
   ): Iterator[InternalRow] = {
     // The current groups should be matching and the group should not be empty.
     assert(currRightIter.hasNext)
-    val rHead = currRightIter.next()
+    var rHead = currRightIter.next()
     var rPrev = rHead.copy()
 
     currLeftIter.map(lHead => {
@@ -204,10 +216,9 @@ private class MergeAsOfIterator(
         // Use pointers to determine candidacy of the joining of right rows to left.
         while (exactMatches && rightOnProj(rHead).getLong(0) <= leftOnProj(lHead).getLong(0)
           || !exactMatches && rightOnProj(rHead).getLong(0) < leftOnProj(lHead).getLong(0)) {
-          var rHeadCopy = rHead.copy()
+          rPrev = rHead.copy()
           if (currRightIter.hasNext) {
-            rPrev = rHeadCopy.copy()
-            rHeadCopy = currRightIter.next()
+            rHead = currRightIter.next()
           } else {
             break
           }
