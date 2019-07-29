@@ -17,8 +17,6 @@
 
 package org.apache.spark.sql.execution.joins
 
-import scala.util.control.Breaks._
-
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
@@ -206,19 +204,30 @@ private class MergeAsOfIterator(
     // The current groups should be matching and the group should not be empty.
     assert(currRightIter.hasNext)
     var rHead = currRightIter.next()
-    var rPrev = rHead.copy()
+    var rPrev = rHead
 
     currLeftIter.map(lHead => {
-      breakable {
-        // Use pointers to determine candidacy of the joining of right rows to left.
-        while (exactMatches && rightOnProj(rHead).getLong(0) <= leftOnProj(lHead).getLong(0)
-          || !exactMatches && rightOnProj(rHead).getLong(0) < leftOnProj(lHead).getLong(0)) {
-          rPrev = rHead.copy()
-          if (currRightIter.hasNext) {
-            rHead = currRightIter.next()
-          } else {
-            break
-          }
+      var exit = false
+      // Use pointers to determine candidacy of the joining of right rows to left.
+      while (!exit && (exactMatches && rightOnProj(rHead).getLong(0) <= leftOnProj(lHead).getLong(0)
+        || !exactMatches && rightOnProj(rHead).getLong(0) < leftOnProj(lHead).getLong(0))) {
+        rPrev = rHead.copy()
+        if (currRightIter.hasNext) {
+          rHead = currRightIter.next()
+        } else {
+          /**
+           * This else condition is called when the current right iterator is exhausted. However,
+           * due to the current implementation of GroupedIterator, the hasNext method returns false
+           * if either: 1) the current iterator of internal rows in the the grouped iterator is
+           * completely exhausted AND the grouped iterator in this particular partition, is also
+           * exhausted, meaning the value of rHead from this point on is no longer relevant or
+           * 2) the current iterator is completely exhausted BUT the grouped iterator is not. In
+           * this particular instance, the hasNext method will actually move the rHead forward to
+           * the next group (see [[GroupedIterator]]'s hasNext method for more details) so the next
+           * line reverts the rHead pointer back using the previous value, rPrev.
+           */
+          rHead = rPrev
+          exit = true
         }
       }
 
