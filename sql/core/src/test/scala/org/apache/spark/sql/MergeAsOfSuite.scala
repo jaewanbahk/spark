@@ -452,7 +452,6 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
       ))
   }
 
-
   test("asof on right intersect on larger dataset") {
     val df = Seq(
       (new Timestamp(100), 1, "a"),
@@ -501,27 +500,27 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
       ))
   }
 
-  test("generated intervalized test") {
-    val seconds: Long = 1000
-    val minutes: Long = 60*seconds
-    val hours: Long = 60*minutes
-    val days: Long = 24*hours
-    val months: Long = 30*days
-    val years: Long = 12*months
+  val seconds: Long = 1000
+  val minutes: Long = 60*seconds
+  val hours: Long = 60*minutes
+  val days: Long = 24*hours
+  val months: Long = 30*days
+  val years: Long = 12*months
 
+  test("generated intervalized test - dense") {
     val lData = genIntervalizedData(
       "15min",
       new Timestamp(46*years),
-      new Timestamp(46*years + months),
+      new Timestamp(47*years + months),
       9,
       17,
       50,
       1,
       123,
-      0.5
+      0.9
     )
 
-    var rData = genIntervalizedData(
+    val rData = genIntervalizedData(
       "15min",
       new Timestamp(46*years),
       new Timestamp(46*years + 10*months),
@@ -530,34 +529,145 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
       100,
       1,
       456,
-      0.7
+      0.9
     )
 
-    def test(
-      lData: DataFrame,
-      rData: DataFrame,
-      leftOn: Column,
-      rightOn: Column,
-      leftBy: Column,
-      rightBy: Column,
-      tolerance: Long = Long.MaxValue,
-      exactMatches: Boolean = true
-    ): Unit = {
-      val col = lData.columns.toList ++ rData.columns.map(c => "r"+c).filter(c => {c != "rtime" && c != "rid"}).toList
-      var res = lData
-      var expected = lData
-      if (tolerance == Long.MaxValue) {
-        res = lData.mergeAsOf(rData, leftOn, rightOn, leftBy, rightBy, "Inf", exactMatches).toDF(col: _*)
-        expected = naive(lData, rData, leftOn, rightOn, leftBy, rightBy, tolerance, exactMatches)
-      } else {
-        res = lData.mergeAsOf(rData, leftOn, rightOn, leftBy, rightBy, tolerance.toString+"ms", exactMatches).toDF(col: _*)
-        expected = naive(lData, rData, leftOn, rightOn, leftBy, rightBy, tolerance/1000, exactMatches)
-      }
-      assert(res.count() == expected.count())
-      checkAnswer(res, expected)
-    }
+    compare(lData, rData, lData("time"), rData("time"), lData("id"), rData("id"), Long.MaxValue, true)
+  }
 
-    test(lData, rData, lData("time"), rData("time"), lData("id"), rData("id"), Long.MaxValue, false)
+  test("generated intervalized test - sparse") {
+    val lData = genIntervalizedData(
+      "15min",
+      new Timestamp(20*years),
+      new Timestamp(20*years + 6*months),
+      9,
+      17,
+      50,
+      1,
+      234,
+      0.9
+    )
+
+    val rData = genIntervalizedData(
+      "15min",
+      new Timestamp(20*years),
+      new Timestamp(21*years),
+      9,
+      17,
+      100,
+      1,
+      345,
+      0.1
+    )
+
+    compare(lData, rData, lData("time"), rData("time"), lData("id"), rData("id"), Long.MaxValue, true)
+  }
+
+  test("generated intervalized test - dense, high tolerance") {
+    val lData = genIntervalizedData(
+      "15min",
+      new Timestamp(35*years),
+      new Timestamp(35*years + months),
+      9,
+      17,
+      50,
+      1,
+      456,
+      0.9
+    )
+
+    val rData = genIntervalizedData(
+      "30min",
+      new Timestamp(35*years),
+      new Timestamp(35*years + 10*months),
+      9,
+      17,
+      100,
+      1,
+      567,
+      0.9
+    )
+
+    compare(lData, rData, lData("time"), rData("time"), lData("id"), rData("id"), 6*hours.toLong, true)
+  }
+
+  test("generated intervalized test - sparse, low tolerance") {
+    val lData = genIntervalizedData(
+      "15min",
+      new Timestamp(78*years),
+      new Timestamp(78*years + months),
+      9,
+      17,
+      50,
+      1,
+      567,
+      0.1
+    )
+
+    val rData = genIntervalizedData(
+      "15min",
+      new Timestamp(77*years),
+      new Timestamp(78*years + 10*months),
+      9,
+      17,
+      100,
+      1,
+      789,
+      0.9
+    )
+
+    compare(lData, rData, lData("time"), rData("time"), lData("id"), rData("id"), hours.toLong, true)
+  }
+
+  test("generated intervalized test - dense, high tolerance, inexact matching") {
+    val lData = genIntervalizedData(
+      "15min",
+      new Timestamp(60*years),
+      new Timestamp(62*years),
+      9,
+      17,
+      50,
+      1,
+      678,
+      0.9
+    )
+
+    val rData = genIntervalizedData(
+      "30min",
+      new Timestamp(60*years + 6*months),
+      new Timestamp(61*years + 6*months),
+      9,
+      17,
+      100,
+      1,
+      999,
+      0.9
+    )
+
+    compare(lData, rData, lData("time"), rData("time"), lData("id"), rData("id"), 6*hours.toLong, false)
+  }
+
+  def compare(
+    lData: DataFrame,
+    rData: DataFrame,
+    leftOn: Column,
+    rightOn: Column,
+    leftBy: Column,
+    rightBy: Column,
+    tolerance: Long = Long.MaxValue,
+    exactMatches: Boolean = true
+  ): Unit = {
+    val col = lData.columns.toList ++ rData.columns.map(c => "r"+c).filter(c => {c != "rtime" && c != "rid"}).toList
+    var res = lData
+    var expected = lData
+    if (tolerance == Long.MaxValue) {
+      res = lData.mergeAsOf(rData, leftOn, rightOn, leftBy, rightBy, "Inf", exactMatches).toDF(col: _*)
+      expected = naive(lData, rData, leftOn, rightOn, leftBy, rightBy, tolerance, exactMatches)
+    } else {
+      res = lData.mergeAsOf(rData, leftOn, rightOn, leftBy, rightBy, tolerance.toString+"ms", exactMatches).toDF(col: _*)
+      expected = naive(lData, rData, leftOn, rightOn, leftBy, rightBy, tolerance/1000, exactMatches)
+    }
+    checkAnswer(res, expected)
   }
 
   private def genIntervalizedData(
