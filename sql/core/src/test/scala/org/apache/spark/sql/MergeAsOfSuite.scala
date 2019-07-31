@@ -742,4 +742,5 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
 
     res2.toDF(resCol: _*).drop("maxtime").drop("rtime").drop("rid")
   }
+
 }

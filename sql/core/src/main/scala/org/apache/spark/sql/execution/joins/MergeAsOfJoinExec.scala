@@ -204,7 +204,7 @@ private class MergeAsOfIterator(
     // The current groups should be matching and the group should not be empty.
     assert(currRightIter.hasNext)
     var rHead = currRightIter.next()
-    var rPrev = rHead
+    var rPrev = rHead.copy()
 
     currLeftIter.map(lHead => {
       var exit = false
