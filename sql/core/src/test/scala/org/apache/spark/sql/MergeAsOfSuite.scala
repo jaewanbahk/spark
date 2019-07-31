@@ -23,6 +23,8 @@ import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.test.SharedSQLContext
 
+import scala.concurrent.duration.Duration
+
 class MergeAsOfSuite extends QueryTest with SharedSQLContext{
   import testImplicits._
 
@@ -450,7 +452,6 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
       ))
   }
 
-
   test("asof on right intersect on larger dataset") {
     val df = Seq(
       (new Timestamp(100), 1, "a"),
@@ -498,4 +499,248 @@ class MergeAsOfSuite extends QueryTest with SharedSQLContext{
         Row(new Timestamp(105), 20, "c", null)
       ))
   }
+
+  val seconds: Long = 1000
+  val minutes: Long = 60*seconds
+  val hours: Long = 60*minutes
+  val days: Long = 24*hours
+  val months: Long = 30*days
+  val years: Long = 12*months
+
+  test("generated intervalized test - dense") {
+    val lData = genIntervalizedData(
+      "15min",
+      new Timestamp(46*years),
+      new Timestamp(47*years + months),
+      9,
+      17,
+      50,
+      1,
+      123,
+      0.9
+    )
+
+    val rData = genIntervalizedData(
+      "15min",
+      new Timestamp(46*years),
+      new Timestamp(46*years + 10*months),
+      9,
+      17,
+      100,
+      1,
+      456,
+      0.9
+    )
+
+    compare(lData, rData, lData("time"), rData("time"), lData("id"), rData("id"), Long.MaxValue, true)
+  }
+
+  test("generated intervalized test - sparse") {
+    val lData = genIntervalizedData(
+      "15min",
+      new Timestamp(20*years),
+      new Timestamp(20*years + 6*months),
+      9,
+      17,
+      50,
+      1,
+      234,
+      0.9
+    )
+
+    val rData = genIntervalizedData(
+      "15min",
+      new Timestamp(20*years),
+      new Timestamp(21*years),
+      9,
+      17,
+      100,
+      1,
+      345,
+      0.1
+    )
+
+    compare(lData, rData, lData("time"), rData("time"), lData("id"), rData("id"), Long.MaxValue, true)
+  }
+
+  test("generated intervalized test - dense, high tolerance") {
+    val lData = genIntervalizedData(
+      "15min",
+      new Timestamp(35*years),
+      new Timestamp(35*years + months),
+      9,
+      17,
+      50,
+      1,
+      456,
+      0.9
+    )
+
+    val rData = genIntervalizedData(
+      "30min",
+      new Timestamp(35*years),
+      new Timestamp(35*years + 10*months),
+      9,
+      17,
+      100,
+      1,
+      567,
+      0.9
+    )
+
+    compare(lData, rData, lData("time"), rData("time"), lData("id"), rData("id"), 6*hours.toLong, true)
+  }
+
+  test("generated intervalized test - sparse, low tolerance") {
+    val lData = genIntervalizedData(
+      "15min",
+      new Timestamp(78*years),
+      new Timestamp(78*years + months),
+      9,
+      17,
+      50,
+      1,
+      567,
+      0.1
+    )
+
+    val rData = genIntervalizedData(
+      "15min",
+      new Timestamp(77*years),
+      new Timestamp(78*years + 10*months),
+      9,
+      17,
+      100,
+      1,
+      789,
+      0.9
+    )
+
+    compare(lData, rData, lData("time"), rData("time"), lData("id"), rData("id"), hours.toLong, true)
+  }
+
+  test("generated intervalized test - dense, high tolerance, inexact matching") {
+    val lData = genIntervalizedData(
+      "15min",
+      new Timestamp(60*years),
+      new Timestamp(62*years),
+      9,
+      17,
+      50,
+      1,
+      678,
+      0.9
+    )
+
+    val rData = genIntervalizedData(
+      "30min",
+      new Timestamp(60*years + 6*months),
+      new Timestamp(61*years + 6*months),
+      9,
+      17,
+      100,
+      1,
+      999,
+      0.9
+    )
+
+    compare(lData, rData, lData("time"), rData("time"), lData("id"), rData("id"), 6*hours.toLong, false)
+  }
+
+  def compare(
+    lData: DataFrame,
+    rData: DataFrame,
+    leftOn: Column,
+    rightOn: Column,
+    leftBy: Column,
+    rightBy: Column,
+    tolerance: Long = Long.MaxValue,
+    exactMatches: Boolean = true
+  ): Unit = {
+    val col = lData.columns.toList ++ rData.columns.map(c => "r"+c).filter(c => {c != "rtime" && c != "rid"}).toList
+    var res = lData
+    var expected = lData
+    if (tolerance == Long.MaxValue) {
+      res = lData.mergeAsOf(rData, leftOn, rightOn, leftBy, rightBy, "Inf", exactMatches).toDF(col: _*)
+      expected = naive(lData, rData, leftOn, rightOn, leftBy, rightBy, tolerance, exactMatches)
+    } else {
+      res = lData.mergeAsOf(rData, leftOn, rightOn, leftBy, rightBy, tolerance.toString+"ms", exactMatches).toDF(col: _*)
+      expected = naive(lData, rData, leftOn, rightOn, leftBy, rightBy, tolerance/1000, exactMatches)
+    }
+    checkAnswer(res, expected)
+  }
+
+  private def genIntervalizedData(
+    freq: String,
+    begin: Timestamp,
+    end: Timestamp,
+    beginHour: Int,
+    endHour: Int,
+    keys: Int,
+    values: Int,
+    seed: Long,
+    bias: Double
+  ): DataFrame = {
+    val frequency = Duration(freq).toSeconds
+    val delta = (end.getTime-begin.getTime)/1000
+    val dates = for (i <- spark.range(0, delta/frequency)) yield {begin.getTime/1000 + i*frequency}
+    var df = dates.toDF("time")
+    df = df.withColumn("ids", functions.array((0 to keys+1).map(functions.lit): _*))
+    df = df.withColumn("id", functions.explode(df.col("ids"))).drop("ids")
+    for (i <- 1 to values) {
+      df = df.withColumn(s"v$i", functions.rand(seed=seed)-0.5)
+    }
+    df = df.withColumn("time", functions.col("time").cast("timestamp"))
+    df = df.filter(functions.hour(df.col("time")) >= beginHour).filter(functions.hour(df.col("time")) < endHour)
+    df = df.filter(functions.rand(seed=seed) <= bias)
+
+    df
+  }
+
+  private def naive(
+    left: DataFrame,
+    right: DataFrame,
+    leftOn: Column,
+    rightOn: Column,
+    leftBy: Column,
+    rightBy: Column,
+    tolerance: Long = Long.MaxValue,
+    exactMatches: Boolean): DataFrame = {
+
+    val rCol = right.columns.map(c => "r"+c).toList
+    val newRight = right.toDF(rCol: _*)
+
+    val res = (tolerance, exactMatches) match {
+      case (Long.MaxValue, true) => left.join(
+        newRight,
+        left("id") === newRight("rid") && left("time") >= newRight("rtime"),
+        "left_outer"
+      )
+      case (Long.MaxValue, false) => left.join(
+        newRight,
+        left("id") === newRight("rid") && left("time") > newRight("rtime"),
+        "left_outer"
+      )
+      case(_, true) => left.join(
+        newRight,
+        left("id") === newRight("rid") && left("time") >= newRight("rtime") && left("time").cast("long") <= newRight("rtime").cast("long") + tolerance,
+        "left_outer"
+      )
+      case(_, false) => left.join(
+        newRight,
+        left("id") === newRight("rid") && left("time") > newRight("rtime") && left("time").cast("long") <= newRight("rtime").cast("long") + tolerance,
+        "left_outer"
+      )
+    }
+
+    var maxTime = res.groupBy("time", "id").agg(functions.max(newRight("rtime"))).sort("id")
+    maxTime = maxTime.toDF("time", "id", "maxtime")
+
+    var res2 = left.join(maxTime, Seq("time", "id"), joinType ="left")
+    res2 = res2.join(right, res2("id") === right("id") && res2("maxtime") === right("time"), joinType = "left")
+    val resCol = left.columns.toList ++ Seq("maxtime") ++ rCol
+
+    res2.toDF(resCol: _*).drop("maxtime").drop("rtime").drop("rid")
+  }
+
 }
